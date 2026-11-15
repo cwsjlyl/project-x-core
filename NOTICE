@@ -19,14 +19,20 @@ Project X-Core / 蒼藍核心 — 授權聲明
    LICENSE-Kenney-Pixel-Platformer-Industrial-Expansion.txt
 
    說明：public/assets/tiles/industrial.png 當中前 112 格（16×7，每格 18px）
-   直接取自該素材包嘅 packed tilesheet。額外第 8 列（圖塊 113–128）
-   係本專案自行繪製嘅背景牆面／窗／通風口，同樣以 CC0／與主程式 MIT
-   相容方式提供。
+   直接取自該素材包嘅 packed tilesheet。第 8 列（圖塊 113–128）係本專案
+   自行繪製嘅背景牆面／窗／通風口；第 9 列（圖塊 129–144）係本專案原創
+   嘅地面岩層、平台同桁架，同樣以 CC0／與主程式 MIT 相容方式提供。
 
 4. 角色、敵人、首領「雷霆犀」、子彈、拾取物、學習站等像素貼圖
    主角精靈圖係根據課堂提供嘅相片繪製嘅原創像素角色（非官方洛克人角色）。
    首領、敵人、子彈、拾取物同學習站圖示，由遊戲預載場景以幾何方式烘焙生成，
    屬本專案原創素材。若主角精靈圖未能載入，會退回簡易烘焙造型。
+
+4b. 黃昏遠景、左側 HUD、擊中特效
+   public/assets/bg/ 同 public/assets/ui/ 內嘅天空、剪影、廢墟、太陽、
+   掃描線、能量條外框、徽章、火花同槍口閃光，均為本專案原創像素圖。
+   畫面表現向經典掌機橫向動作遊戲致敬，但並無使用、描摹或再製任何
+   官方洛克人／Mega Man／Zero／ZX 圖塊、精靈、HUD 或音樂。
 
 5. 字型：Fusion Pixel Font
    https://github.com/TakWolf/fusion-pixel-font

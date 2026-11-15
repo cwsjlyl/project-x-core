@@ -33,16 +33,16 @@ export class TouchControls {
     y: number,
     text: string,
     key: keyof GameInput['touch'],
-    color = 0x123044
+    color = 0x1a1410
   ): void {
     const bg = scene.add
-      .circle(x, y, 20, color, 0.55)
-      .setStrokeStyle(1, 0x7ad7ff, 0.7)
+      .circle(x, y, 20, color, 0.32)
+      .setStrokeStyle(1, 0x8a7a70, 0.4)
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
     const label = addUiText(scene, x, y, text, {
       size: 12,
-      color: '#e8fbff',
+      color: '#f0e4d4',
       originX: 0.5,
       originY: 0.5
     }).setScrollFactor(0);
@@ -50,7 +50,7 @@ export class TouchControls {
 
     const press = (down: boolean) => {
       this.gameInput.touch[key] = down;
-      bg.setFillStyle(color, down ? 0.9 : 0.55);
+      bg.setFillStyle(color, down ? 0.7 : 0.32);
       bg.setScale(down ? 0.92 : 1);
     };
 

@@ -7,6 +7,7 @@ import { GameInput } from '../systems/GameInput';
 import { loadStage, type StageData } from '../systems/MapLoader';
 import { TouchControls } from '../systems/TouchControls';
 import { addUiText } from '../systems/UiText';
+import { GameHud } from '../systems/Hud';
 import { ScienceProgress, TOPIC_BY_ID, type TopicId } from '../systems/ScienceBank';
 import { ScienceUI } from '../systems/ScienceUI';
 
@@ -34,7 +35,8 @@ export class GameScene extends Phaser.Scene {
   private bossShots!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
   private playerLight: Phaser.GameObjects.Light | null = null;
-  private hudText!: Phaser.GameObjects.Text;
+  private hud!: GameHud;
+  private controlHint!: Phaser.GameObjects.Text;
   private messageText!: Phaser.GameObjects.Text;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBarFill!: Phaser.GameObjects.Rectangle;
@@ -56,6 +58,10 @@ export class GameScene extends Phaser.Scene {
   private doorHintCooldown = 0;
   private checkpoint: { x: number; y: number } = { x: 80, y: 200 };
   private statusTimer = 0;
+  private skyLayer!: Phaser.GameObjects.TileSprite;
+  private farLayer!: Phaser.GameObjects.TileSprite;
+  private midLayer!: Phaser.GameObjects.TileSprite;
+
 
   constructor() {
     super('GameScene');
@@ -105,6 +111,7 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+    this.createAtmosphere();
 
     this.spawnMappedEnemies();
     this.spawnMappedPickups();
@@ -139,10 +146,14 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.doorBlocker);
     this.physics.add.collider(this.boss, this.doorBlocker);
     this.physics.add.collider(this.bulletPool, this.stage.solid, (bullet) => {
-      this.recycleBullet(bullet as Phaser.Physics.Arcade.Sprite);
+      const b = bullet as Phaser.Physics.Arcade.Sprite;
+      this.spawnSpark(b.x, b.y, 0xfff0b0);
+      this.recycleBullet(b);
     });
     this.physics.add.collider(this.bossShots, this.stage.solid, (shot) => {
-      this.recycleBossShot(shot as Phaser.Physics.Arcade.Sprite);
+      const s = shot as Phaser.Physics.Arcade.Sprite;
+      this.spawnSpark(s.x, s.y, 0xffcc66);
+      this.recycleBossShot(s);
     });
 
     this.physics.add.overlap(this.bulletPool, this.enemies, (bObj, eObj) => {
@@ -199,6 +210,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.gameInput.poll();
+    this.syncParallax();
 
     if (this.scienceUI?.isOpen) {
       this.updateHud();
@@ -282,13 +294,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryEnableLights(): boolean {
-    if (this.game.renderer.type !== Phaser.WEBGL) return false;
-    try {
-      this.lights.enable().setAmbientColor(0x7a8aa8);
-      return true;
-    } catch {
-      return false;
-    }
+    // Outdoor dusk stage: skip Light2D gloom so sunset colours stay warm.
+    // The photo hero must also stay off the Light2D pipeline.
+    return false;
   }
 
   private applyLight(obj: Phaser.GameObjects.Components.Pipeline): void {
@@ -539,6 +547,7 @@ export class GameScene extends Phaser.Scene {
     const dmg = bullet.getData('damage') as number;
     const level = bullet.getData('chargeLevel') as number;
     enemy.hp -= dmg;
+    this.spawnSpark(enemy.x, enemy.y, level === 3 ? 0x66ffff : 0xfff0a0);
     this.showFloatingText(enemy.x, enemy.y - 12, `-${dmg}`, level === 3 ? '#00ffff' : '#ffeb3b');
     if (level < 3 || enemy.hp > 0) this.recycleBullet(bullet);
     if (enemy.hp <= 0) {
@@ -554,6 +563,7 @@ export class GameScene extends Phaser.Scene {
     const level = bullet.getData('chargeLevel') as number;
     const dmg = Math.round(base * (1 + this.player.derived.bossDamageBonus));
     const slain = this.boss.takeDamage(dmg);
+    this.spawnSpark(this.boss.x, this.boss.y - 8, level === 3 ? 0x66ffff : 0xfff0a0);
     this.showFloatingText(this.boss.x, this.boss.y - 20, `-${dmg}`, level === 3 ? '#00ffff' : '#ffeb3b');
     if (level < 3 || this.boss.hp > 0) this.recycleBullet(bullet);
     if (slain) this.onBossDefeated();
@@ -576,6 +586,7 @@ export class GameScene extends Phaser.Scene {
     body.setAllowGravity(false);
     bullet.setVelocityX(payload.dir * 380);
     bullet.setVelocityY(0);
+    this.spawnMuzzle(payload.x, payload.y, payload.dir, payload.chargeLevel);
   }
 
   private recycleBullet(bullet: Phaser.Physics.Arcade.Sprite): void {
@@ -633,18 +644,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createHud(): void {
-    this.hudText = addUiText(this, 8, 4, '', {
+    this.hud = new GameHud(this);
+    this.hud.create();
+
+    this.controlHint = addUiText(this, 240, 258, '方向鍵／AD 移動　Z／空白 跳　X 射擊　C 衝刺　E 裝備', {
       size: 12,
-      color: '#e0f7fa'
+      color: '#d8c8b0',
+      originX: 0.5,
+      originY: 1,
+      align: 'center'
     })
       .setScrollFactor(0)
       .setDepth(200);
-    addUiText(this, 8, 32, '方向鍵／AD 移動　Z／空白 跳　X 射擊　C 衝刺　E 裝備', {
-      size: 12,
-      color: '#80deea'
-    })
-      .setScrollFactor(0)
-      .setDepth(200);
+    this.time.delayedCall(4500, () => {
+      if (this.controlHint) this.controlHint.setVisible(false);
+    });
 
     this.stationHint = addUiText(this, 240, 86, '', {
       size: 12,
@@ -657,7 +671,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(220)
       .setVisible(false);
 
-    this.messageText = addUiText(this, 240, 64, '', {
+    this.messageText = addUiText(this, 240, 54, '', {
       size: 12,
       color: '#fff3a0',
       originX: 0.5,
@@ -670,22 +684,22 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false);
 
     this.bossBarBg = this.add
-      .rectangle(240, 58, 204, 10, 0x140a10, 0.9)
+      .rectangle(240, 18, 204, 10, 0x140a10, 0.9)
       .setStrokeStyle(1, 0xffe088)
       .setScrollFactor(0)
       .setDepth(210)
       .setVisible(false);
     this.bossBarFill = this.add
-      .rectangle(140, 58, 200, 6, 0xff4466)
+      .rectangle(140, 18, 200, 6, 0xff4466)
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(211)
       .setVisible(false);
-    this.bossBarLabel = addUiText(this, 240, 48, '雷霆犀', {
+    this.bossBarLabel = addUiText(this, 240, 8, '雷霆犀', {
       size: 12,
       color: '#ffe8a0',
       originX: 0.5,
-      originY: 1
+      originY: 0
     })
       .setScrollFactor(0)
       .setDepth(211)
@@ -695,10 +709,63 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    const p = this.player;
-    this.hudText.setText(
-      `LV.${p.level}  HP ${p.hp}/${p.maxHp}  ATK ${p.attack}  EXP ${p.exp}/${p.nextExp}\n科學分 ${this.science.score}    學習站 ${this.science.clearedCount}/${this.science.totalStations}`
-    );
+    this.hud.update(this.player, this.science);
+  }
+
+  private createAtmosphere(): void {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    this.skyLayer = this.add.tileSprite(0, 0, w, h, 'bg_sky').setOrigin(0, 0).setScrollFactor(0).setDepth(-30);
+    this.add.image(392, 128, 'bg_sun').setScrollFactor(0).setDepth(-25);
+    this.farLayer = this.add.tileSprite(0, 0, w, h, 'bg_far').setOrigin(0, 0).setScrollFactor(0).setDepth(-20);
+    this.midLayer = this.add.tileSprite(0, 0, w, h, 'bg_mid').setOrigin(0, 0).setScrollFactor(0).setDepth(-10);
+    this.add
+      .tileSprite(0, 0, w, h, 'bg_scanline')
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(150)
+      .setAlpha(0.22);
+    this.syncParallax();
+  }
+
+  private syncParallax(): void {
+    if (!this.skyLayer) return;
+    const x = this.cameras.main.scrollX;
+    this.skyLayer.tilePositionX = x * 0.12;
+    this.farLayer.tilePositionX = x * 0.32;
+    this.midLayer.tilePositionX = x * 0.58;
+  }
+
+  private spawnSpark(x: number, y: number, tint = 0xfff2a0): void {
+    const spr = this.add.image(x, y, 'spark_tex').setDepth(16).setTint(tint);
+    this.tweens.add({
+      targets: spr,
+      alpha: 0,
+      scale: 1.8,
+      duration: 160,
+      onComplete: () => spr.destroy()
+    });
+  }
+
+  private spawnMuzzle(x: number, y: number, dir: number, level: 1 | 2 | 3): void {
+    const spr = this.add.image(x, y, 'muzzle_tex').setDepth(16);
+    spr.setFlipX(dir < 0);
+    spr.setScale(level === 3 ? 1.5 : level === 2 ? 1.2 : 1);
+    spr.setTint(level === 3 ? 0x66ffff : level === 2 ? 0xa8e8ff : 0xfff3b0);
+    this.tweens.add({
+      targets: spr,
+      alpha: 0,
+      x: x + dir * 6,
+      duration: 90,
+      onComplete: () => spr.destroy()
+    });
+  }
+
+  /** Local preview helper. Pans the camera without changing gameplay state. */
+  panPreviewTo(x: number, y = 135): void {
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(Math.round(x), Math.round(y));
+    this.syncParallax();
   }
 
   private updateBossBar(): void {

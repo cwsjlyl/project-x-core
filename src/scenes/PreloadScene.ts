@@ -36,6 +36,15 @@ export class PreloadScene extends Phaser.Scene {
 
     this.load.tilemapTiledJSON('stage1', 'assets/maps/stage1.json');
     this.load.image('industrial', 'assets/tiles/industrial.png');
+    this.load.image('bg_sky', 'assets/bg/sky.png');
+    this.load.image('bg_far', 'assets/bg/far.png');
+    this.load.image('bg_mid', 'assets/bg/mid.png');
+    this.load.image('bg_sun', 'assets/bg/sun.png');
+    this.load.image('bg_scanline', 'assets/bg/scanline.png');
+    this.load.image('hud_frame', 'assets/ui/hud_frame.png');
+    this.load.image('hud_badge', 'assets/ui/hud_badge.png');
+    this.load.image('spark_tex', 'assets/ui/spark.png');
+    this.load.image('muzzle_tex', 'assets/ui/muzzle.png');
     this.load.spritesheet('player', 'assets/sprites/player.png', {
       frameWidth: 48,
       frameHeight: 64
@@ -173,6 +182,12 @@ export class PreloadScene extends Phaser.Scene {
     g.fillStyle(0x33e0ff);
     g.fillRect(20, 28, 18, 2);
     g.fillRect(48, 24, 2, 10);
+    // extra original shading (still a rhino-mech, not a copied boss)
+    g.fillStyle(0x5a6878);
+    g.fillRect(24, 18, 16, 2);
+    g.fillStyle(0x1a222e);
+    g.fillRect(16, 30, 8, 2);
+    g.fillRect(40, 32, 10, 2);
     g.generateTexture('boss_tex', 64, 48);
     g.clear();
 

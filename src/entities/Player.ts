@@ -98,6 +98,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.usesSheet;
   }
 
+  /** 0..1 buster charge, for the CORE energy bar. */
+  get chargeRatio(): number {
+    return Math.min(1, this.chargeTime / 1100);
+  }
+
   refreshLoadout(): void {
     const prevMax = this.maxHp;
     this.stats = this.equipment.derive();
