@@ -1,0 +1,31 @@
+Project X-Core / 蒼藍核心 — 授權聲明
+====================================
+
+本專案係原創橫向捲軸動作遊戲，向經典 16-bit／NDS 風格動作平台遊戲致敬。
+此作品並非官方洛克人／Mega Man／Capcom 產品，亦無使用任何官方角色、
+精靈圖、音樂或受版權保護嘅素材。
+
+1. 遊戲程式碼（TypeScript／HTML／地圖腳本）
+   以 MIT License 授權，見 LICENSE。
+
+2. Phaser 3
+   MIT License（https://github.com/phaserjs/phaser）
+
+3. 地圖圖塊：Kenney.nl「Pixel Platformer Industrial Expansion」
+   授權：Creative Commons Zero (CC0 1.0)
+   https://creativecommons.org/publicdomain/zero/1.0/
+   來源：https://kenney.nl/assets/pixel-platformer-industrial-expansion
+   完整授權全文見：
+   LICENSE-Kenney-Pixel-Platformer-Industrial-Expansion.txt
+
+   說明：public/assets/tiles/industrial.png 當中前 112 格（16×7，每格 18px）
+   直接取自該素材包嘅 packed tilesheet。額外第 8 列（圖塊 113–128）
+   係本專案自行繪製嘅背景牆面／窗／通風口，同樣以 CC0／與主程式 MIT
+   相容方式提供。
+
+4. 角色、敵人、首領「雷霆犀」、子彈、拾取物等像素貼圖
+   全部由遊戲預載場景以幾何方式烘焙生成，屬本專案原創素材。
+
+5. 字型
+   介面使用系統／瀏覽器已安裝嘅中文字型（例如 Noto Sans CJK、蘋方、微軟正黑體），
+   本倉庫並未內嵌字型檔。
