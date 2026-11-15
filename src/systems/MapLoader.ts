@@ -14,6 +14,10 @@ export interface PickupSpawn extends SpawnPoint {
   itemId: string;
 }
 
+export interface ScienceStationSpawn extends SpawnPoint {
+  topic: string;
+}
+
 export interface RectZone {
   x: number;
   y: number;
@@ -29,6 +33,7 @@ export interface StageData {
   playerSpawn: SpawnPoint;
   enemies: EnemySpawn[];
   pickups: PickupSpawn[];
+  scienceStations: ScienceStationSpawn[];
   checkpoints: SpawnPoint[];
   bossSpawn: SpawnPoint;
   arena: RectZone;
@@ -96,6 +101,7 @@ export function loadStage(scene: Phaser.Scene, useLights: boolean): StageData {
   let playerSpawn: SpawnPoint = { x: 72, y: 200 };
   const enemies: EnemySpawn[] = [];
   const pickups: PickupSpawn[] = [];
+  const scienceStations: ScienceStationSpawn[] = [];
   const checkpoints: SpawnPoint[] = [];
   let bossSpawn: SpawnPoint = { x: worldWidth - 200, y: 180 };
   let arena: RectZone = { x: worldWidth - 576, y: 0, width: 576, height: worldHeight };
@@ -120,6 +126,9 @@ export function loadStage(scene: Phaser.Scene, useLights: boolean): StageData {
       } else if (type === 'pickup' || obj.name.startsWith('pickup')) {
         const itemId = String(p.itemId ?? obj.name.replace(/^pickup_/, ''));
         pickups.push({ x: c.x, y: c.y, itemId });
+      } else if (type === 'science' || type === 'station' || obj.name.startsWith('station')) {
+        const topic = String(p.topic ?? obj.name.replace(/^station_/, ''));
+        scienceStations.push({ x: c.x, y: c.y, topic });
       } else if (type === 'checkpoint') {
         checkpoints.push(c);
       } else if (type === 'boss') {
@@ -142,6 +151,7 @@ export function loadStage(scene: Phaser.Scene, useLights: boolean): StageData {
     playerSpawn,
     enemies,
     pickups,
+    scienceStations,
     checkpoints,
     bossSpawn,
     arena,

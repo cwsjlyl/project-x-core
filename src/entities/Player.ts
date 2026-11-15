@@ -10,6 +10,14 @@ export interface ShotPayload {
   damage: number;
 }
 
+const DISPLAY_W = 36;
+const DISPLAY_H = 48;
+const SRC_W = 48;
+const SRC_H = 64;
+/** World-space body after scale: 16×34, feet-aligned, under 54px gaps. */
+const BODY_W = 16;
+const BODY_H = 34;
+
 export class Player extends Phaser.Physics.Arcade.Sprite {
   public level = 1;
   public exp = 0;
@@ -28,7 +36,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private invulnTimer = 0;
   private airDashesLeft = 0;
   private regenAcc = 0;
+  private shootPoseTimer = 0;
   private stats: DerivedStats;
+  private readonly usesSheet: boolean;
 
   constructor(
     scene: Phaser.Scene,
@@ -39,14 +49,33 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     private readonly onFireCallback: (payload: ShotPayload) => void,
     private readonly onGhostCallback: (x: number, y: number, flipX: boolean) => void
   ) {
-    super(scene, x, y, 'player_tex');
+    const usesSheet = scene.textures.exists('player');
+    super(scene, x, y, usesSheet ? 'player' : 'player_tex');
+    this.usesSheet = usesSheet;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setCollideWorldBounds(true);
-    this.setSize(14, 22);
-    this.setOffset(3, 4);
+    this.setupBody();
     this.stats = this.equipment.derive();
     this.hp = this.maxHp;
+    if (this.usesSheet) {
+      this.play('player-idle', true);
+    }
+  }
+
+  private setupBody(): void {
+    if (this.usesSheet) {
+      this.setDisplaySize(DISPLAY_W, DISPLAY_H);
+      const sx = DISPLAY_W / SRC_W;
+      const sy = DISPLAY_H / SRC_H;
+      const srcBodyW = BODY_W / sx;
+      const srcBodyH = BODY_H / sy;
+      this.setSize(srcBodyW, srcBodyH);
+      this.setOffset((SRC_W - srcBodyW) / 2, SRC_H - srcBodyH);
+    } else {
+      this.setSize(14, 22);
+      this.setOffset(3, 4);
+    }
   }
 
   get maxHp(): number {
@@ -63,6 +92,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   get invulnerable(): boolean {
     return this.invulnTimer > 0 || this.dead;
+  }
+
+  get usingSheet(): boolean {
+    return this.usesSheet;
   }
 
   refreshLoadout(): void {
@@ -156,7 +189,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    if ((onWallLeft || onWallRight) && body.velocity.y > 0) {
+    const wallSliding = (onWallLeft || onWallRight) && body.velocity.y > 0;
+    if (wallSliding) {
       body.setVelocityY(55);
     }
 
@@ -185,6 +219,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (input.shootReleased) {
       this.fireChargedShot();
+    }
+
+    if (this.shootPoseTimer > 0) {
+      this.shootPoseTimer -= delta;
+    }
+
+    this.updateAnimation(onGround, wallSliding, body.velocity.x);
+  }
+
+  private updateAnimation(onGround: boolean, wallSliding: boolean, vx: number): void {
+    if (!this.usesSheet) return;
+    let key = 'player-idle';
+    if (this.isDashing) key = 'player-dash';
+    else if (wallSliding) key = 'player-wall';
+    else if (!onGround) key = 'player-jump';
+    else if (this.shootPoseTimer > 0) key = 'player-shoot';
+    else if (Math.abs(vx) > 8) key = 'player-walk';
+    if (this.anims.currentAnim?.key !== key) {
+      this.play(key, true);
     }
   }
 
@@ -215,6 +268,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       });
     }
     this.chargeTime = 0;
+    this.shootPoseTimer = 180;
     this.clearTint();
   }
 
@@ -251,9 +305,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.invulnTimer = 1200;
     this.chargeTime = 0;
     this.isDashing = false;
+    this.shootPoseTimer = 0;
     this.clearTint();
     this.setAlpha(1);
     this.enableBody(true, x, y, true, true);
     this.setVelocity(0, 0);
+    this.setupBody();
   }
 }

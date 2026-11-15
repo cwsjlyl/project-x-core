@@ -28,4 +28,11 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [PreloadScene, GameScene]
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+declare global {
+  interface Window {
+    __xcoreGame?: Phaser.Game;
+  }
+}
+window.__xcoreGame = game;

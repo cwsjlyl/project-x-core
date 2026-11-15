@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { UI_FONT } from '../constants';
+import { addUiText } from './UiText';
 import type { GameInput } from './GameInput';
 
 interface PadBtn {
@@ -19,12 +19,12 @@ export class TouchControls {
     private readonly gameInput: GameInput
   ) {
     this.root = scene.add.container(0, 0).setScrollFactor(0).setDepth(800);
-    this.makeBtn(scene, 28, 236, '左', 'left');
-    this.makeBtn(scene, 72, 236, '右', 'right');
-    this.makeBtn(scene, 360, 236, '跳', 'jump');
-    this.makeBtn(scene, 408, 236, '射', 'shoot');
-    this.makeBtn(scene, 456, 236, '衝', 'dash');
-    this.makeBtn(scene, 456, 48, '裝', 'equip', 0x225566);
+    this.makeBtn(scene, 28, 234, '左', 'left');
+    this.makeBtn(scene, 74, 234, '右', 'right');
+    this.makeBtn(scene, 356, 234, '跳', 'jump');
+    this.makeBtn(scene, 406, 234, '射', 'shoot');
+    this.makeBtn(scene, 456, 234, '衝', 'dash');
+    this.makeBtn(scene, 456, 46, '裝', 'equip', 0x225566);
   }
 
   private makeBtn(
@@ -36,18 +36,16 @@ export class TouchControls {
     color = 0x123044
   ): void {
     const bg = scene.add
-      .circle(x, y, 18, color, 0.55)
+      .circle(x, y, 20, color, 0.55)
       .setStrokeStyle(1, 0x7ad7ff, 0.7)
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
-    const label = scene.add
-      .text(x, y, text, {
-        fontFamily: UI_FONT,
-        fontSize: '11px',
-        color: '#e8fbff'
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0);
+    const label = addUiText(scene, x, y, text, {
+      size: 12,
+      color: '#e8fbff',
+      originX: 0.5,
+      originY: 0.5
+    }).setScrollFactor(0);
     this.root.add([bg, label]);
 
     const press = (down: boolean) => {

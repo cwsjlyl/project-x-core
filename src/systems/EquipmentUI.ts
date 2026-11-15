@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { UI_FONT } from '../constants';
+import { addUiText } from './UiText';
 import type { EquipItem, EquipSlot, EquipmentSystem } from './Equipment';
 
 const SLOT_ORDER: { slot: EquipSlot; label: string }[] = [
@@ -35,33 +35,27 @@ export class EquipmentUI {
       .setStrokeStyle(1, 0x3ecfff)
       .setScrollFactor(0);
 
-    const title = scene.add
-      .text(240, 22, '裝備配件 ／ 晶片', {
-        fontFamily: UI_FONT,
-        fontSize: '14px',
-        color: '#7ef0ff'
-      })
-      .setOrigin(0.5, 0)
-      .setScrollFactor(0);
+    const title = addUiText(scene, 240, 18, '裝備配件 ／ 晶片', {
+      size: 12,
+      color: '#7ef0ff',
+      originX: 0.5,
+      originY: 0
+    }).setScrollFactor(0);
 
-    const close = scene.add
-      .text(448, 22, '關閉', {
-        fontFamily: UI_FONT,
-        fontSize: '11px',
-        color: '#c9f6ff'
-      })
-      .setOrigin(1, 0)
+    const close = addUiText(scene, 448, 18, '關閉', {
+      size: 12,
+      color: '#c9f6ff',
+      originX: 1,
+      originY: 0
+    })
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
     close.on('pointerdown', () => this.hide());
 
-    const leftLabel = scene.add
-      .text(24, 44, '目前裝備', {
-        fontFamily: UI_FONT,
-        fontSize: '10px',
-        color: '#9ad6e0'
-      })
-      .setScrollFactor(0);
+    const leftLabel = addUiText(scene, 24, 40, '目前裝備', {
+      size: 12,
+      color: '#9ad6e0'
+    }).setScrollFactor(0);
 
     SLOT_ORDER.forEach((entry, i) => {
       const y = 62 + i * 22;
@@ -71,33 +65,24 @@ export class EquipmentUI {
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true });
       box.on('pointerdown', () => this.onSlotClick(entry.slot));
-      const txt = scene.add
-        .text(28, y, `${entry.label}  —`, {
-          fontFamily: UI_FONT,
-          fontSize: '10px',
-          color: '#e8fbff'
-        })
-        .setScrollFactor(0);
+      const txt = addUiText(scene, 28, y, `${entry.label}  —`, {
+        size: 12,
+        color: '#e8fbff'
+      }).setScrollFactor(0);
       this.slotBoxes.push(box);
       this.slotTexts.push(txt);
     });
 
-    const rightLabel = scene.add
-      .text(220, 44, '持有物品（點擊裝備）', {
-        fontFamily: UI_FONT,
-        fontSize: '10px',
-        color: '#9ad6e0'
-      })
-      .setScrollFactor(0);
+    const rightLabel = addUiText(scene, 220, 40, '持有物品（點擊裝備）', {
+      size: 12,
+      color: '#9ad6e0'
+    }).setScrollFactor(0);
 
-    this.descText = scene.add
-      .text(24, 236, '選擇物品以查看效果。再按 E 或「關閉」繼續遊戲。', {
-        fontFamily: UI_FONT,
-        fontSize: '9px',
-        color: '#b8e6ee',
-        wordWrap: { width: 430 }
-      })
-      .setScrollFactor(0);
+    this.descText = addUiText(scene, 24, 234, '選擇物品以查看效果。再按 E 或「關閉」繼續遊戲。', {
+      size: 12,
+      color: '#b8e6ee',
+      wordWrap: 430
+    }).setScrollFactor(0);
 
     this.root.add([dim, panel, title, close, leftLabel, rightLabel, this.descText]);
     this.slotBoxes.forEach((b) => this.root.add(b));
@@ -187,13 +172,10 @@ export class EquipmentUI {
         .setStrokeStyle(1, equipped ? 0x5ce8ff : 0x2a4a5c)
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true });
-      const txt = this.scene.add
-        .text(x, y, item.name, {
-          fontFamily: UI_FONT,
-          fontSize: '9px',
-          color: equipped ? '#8ffff4' : '#e8fbff'
-        })
-        .setScrollFactor(0);
+      const txt = addUiText(this.scene, x, y, item.name, {
+        size: 12,
+        color: equipped ? '#8ffff4' : '#e8fbff'
+      }).setScrollFactor(0);
       box.on('pointerdown', () => this.onItemClick(item));
       this.root.add([box, txt]);
       this.itemBoxes.push(box);

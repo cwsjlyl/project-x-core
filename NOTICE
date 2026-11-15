@@ -23,9 +23,14 @@ Project X-Core / 蒼藍核心 — 授權聲明
    係本專案自行繪製嘅背景牆面／窗／通風口，同樣以 CC0／與主程式 MIT
    相容方式提供。
 
-4. 角色、敵人、首領「雷霆犀」、子彈、拾取物等像素貼圖
-   全部由遊戲預載場景以幾何方式烘焙生成，屬本專案原創素材。
+4. 角色、敵人、首領「雷霆犀」、子彈、拾取物、學習站等像素貼圖
+   主角精靈圖係根據課堂提供嘅相片繪製嘅原創像素角色（非官方洛克人角色）。
+   首領、敵人、子彈、拾取物同學習站圖示，由遊戲預載場景以幾何方式烘焙生成，
+   屬本專案原創素材。若主角精靈圖未能載入，會退回簡易烘焙造型。
 
-5. 字型
-   介面使用系統／瀏覽器已安裝嘅中文字型（例如 Noto Sans CJK、蘋方、微軟正黑體），
-   本倉庫並未內嵌字型檔。
+5. 字型：Fusion Pixel Font
+   https://github.com/TakWolf/fusion-pixel-font
+   Copyright (c) 2022, TakWolf (https://takwolf.com).
+   授權：SIL Open Font License, Version 1.1
+   完整授權全文見 LICENSE-Fusion-Pixel-Font.txt。
+   本專案使用 12px 比例字型嘅拉丁同香港繁體（zh_hk）子集。

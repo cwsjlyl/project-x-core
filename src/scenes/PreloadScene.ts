@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { UI_FONT } from '../constants';
+import { addUiText, waitForUiFonts } from '../systems/UiText';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -8,22 +8,20 @@ export class PreloadScene extends Phaser.Scene {
 
   preload(): void {
     const { width, height } = this.cameras.main;
-    const title = this.add
-      .text(width / 2, height / 2 - 28, 'Project X-Core  蒼藍核心', {
-        fontFamily: UI_FONT,
-        fontSize: '14px',
-        color: '#7ef0ff'
-      })
-      .setOrigin(0.5);
+    const title = addUiText(this, width / 2, height / 2 - 32, 'Project X-Core  蒼藍核心', {
+      size: 24,
+      color: '#7ef0ff',
+      originX: 0.5,
+      originY: 0.5
+    });
     const barBg = this.add.rectangle(width / 2, height / 2, 240, 12, 0x1a2639);
     const barFill = this.add.rectangle(width / 2 - 118, height / 2, 0, 8, 0x00e5ff).setOrigin(0, 0.5);
-    const hint = this.add
-      .text(width / 2, height / 2 + 20, '載入中…', {
-        fontFamily: UI_FONT,
-        fontSize: '10px',
-        color: '#9ad6e0'
-      })
-      .setOrigin(0.5);
+    const hint = addUiText(this, width / 2, height / 2 + 22, '載入中…', {
+      size: 12,
+      color: '#9ad6e0',
+      originX: 0.5,
+      originY: 0.5
+    });
 
     this.load.on('progress', (value: number) => {
       barFill.width = 236 * value;
@@ -38,11 +36,43 @@ export class PreloadScene extends Phaser.Scene {
 
     this.load.tilemapTiledJSON('stage1', 'assets/maps/stage1.json');
     this.load.image('industrial', 'assets/tiles/industrial.png');
+    this.load.spritesheet('player', 'assets/sprites/player.png', {
+      frameWidth: 48,
+      frameHeight: 64
+    });
   }
 
   create(): void {
     this.bakePixelTextures();
+    this.createPlayerAnims();
+    void this.startWhenReady();
+  }
+
+  private async startWhenReady(): Promise<void> {
+    await waitForUiFonts();
     this.scene.start('GameScene');
+  }
+
+  private createPlayerAnims(): void {
+    if (!this.textures.exists('player')) return;
+    const mk = (
+      key: string,
+      frames: Phaser.Types.Animations.AnimationFrame[] | { start: number; end?: number },
+      frameRate: number,
+      repeat: number
+    ): void => {
+      if (this.anims.exists(key)) return;
+      const list = Array.isArray(frames)
+        ? frames
+        : this.anims.generateFrameNumbers('player', { start: frames.start, end: frames.end ?? frames.start });
+      this.anims.create({ key, frames: list, frameRate, repeat });
+    };
+    mk('player-idle', { start: 0, end: 1 }, 4, -1);
+    mk('player-walk', { start: 2, end: 3 }, 8, -1);
+    mk('player-jump', [{ key: 'player', frame: 4 }], 1, -1);
+    mk('player-dash', [{ key: 'player', frame: 5 }], 1, -1);
+    mk('player-shoot', [{ key: 'player', frame: 6 }], 1, -1);
+    mk('player-wall', [{ key: 'player', frame: 7 }], 1, -1);
   }
 
   /** Bake original pixel textures into the Texture Manager (no ripped sprites). */
@@ -186,6 +216,22 @@ export class PreloadScene extends Phaser.Scene {
     g.fillStyle(0x10141a);
     g.fillRect(0, 8, 18, 2);
     g.generateTexture('door_block_tex', 18, 18);
+    g.clear();
+
+    // 9. Science learning station kiosk
+    g.fillStyle(0x1a2433);
+    g.fillRect(2, 6, 14, 18);
+    g.fillStyle(0x2c3d52);
+    g.fillRect(3, 7, 12, 10);
+    g.fillStyle(0x33e0ff);
+    g.fillRect(4, 9, 10, 6);
+    g.fillStyle(0xffffff);
+    g.fillRect(6, 11, 6, 2);
+    g.fillStyle(0x0a1a2a);
+    g.fillRect(0, 22, 18, 2);
+    g.fillStyle(0xffe066);
+    g.fillRect(8, 4, 2, 2);
+    g.generateTexture('station_tex', 18, 24);
     g.destroy();
   }
 }

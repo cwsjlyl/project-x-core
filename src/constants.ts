@@ -1,5 +1,4 @@
-export const UI_FONT =
-  '"Noto Sans CJK TC", "Noto Sans CJK HK", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+export { UI_FONT, UI_SIZE_BODY, UI_SIZE_TITLE } from './systems/UiText';
 
 export const WORLD = {
   tile: 18,
