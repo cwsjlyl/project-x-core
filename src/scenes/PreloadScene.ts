@@ -197,12 +197,98 @@ export class PreloadScene extends Phaser.Scene {
     g.generateTexture('tile_tex', 32, 32);
     g.clear();
 
-    // 3. Buster bolt (12x8)
-    g.fillStyle(0x00ffff);
-    g.fillRect(0, 1, 12, 6);
+    // 3. Buster bolts — distinct charge tiers (original pixel art)
+    // Lv1: small bright pellet + short trail
+    g.fillStyle(0x3aa0c8);
+    g.fillRect(0, 3, 3, 2);
+    g.fillStyle(0x66e8ff);
+    g.fillRect(2, 2, 5, 4);
     g.fillStyle(0xffffff);
-    g.fillRect(3, 2, 7, 4);
+    g.fillRect(5, 3, 5, 2);
+    g.fillRect(8, 2, 3, 4);
+    g.generateTexture('buster_lv1_tex', 12, 8);
     g.generateTexture('buster_tex', 12, 8);
+    g.clear();
+
+    // Lv2: larger bolt
+    g.fillStyle(0x2a88b0);
+    g.fillRect(0, 3, 4, 2);
+    g.fillStyle(0x5ce8ff);
+    g.fillRect(3, 2, 8, 4);
+    g.fillStyle(0xffffff);
+    g.fillRect(7, 2, 7, 4);
+    g.fillStyle(0xd8ffff);
+    g.fillRect(10, 1, 5, 6);
+    g.fillStyle(0xffffff);
+    g.fillRect(13, 3, 3, 2);
+    g.generateTexture('buster_lv2_tex', 16, 8);
+    g.clear();
+
+    // Lv3: fat bright shot + longer trail
+    g.fillStyle(0x1a6a90);
+    g.fillRect(0, 5, 6, 2);
+    g.fillStyle(0x3ecfff);
+    g.fillRect(4, 3, 8, 6);
+    g.fillStyle(0x66ffff);
+    g.fillRect(10, 2, 8, 8);
+    g.fillStyle(0xffffff);
+    g.fillRect(14, 3, 7, 6);
+    g.fillStyle(0xe8ffff);
+    g.fillRect(17, 4, 4, 4);
+    g.fillStyle(0xffffff);
+    g.fillRect(19, 5, 3, 2);
+    g.generateTexture('buster_lv3_tex', 22, 12);
+    g.clear();
+
+    // Unarmed default pellet (weaker / simpler)
+    g.fillStyle(0x7ab0d0);
+    g.fillRect(0, 2, 2, 2);
+    g.fillStyle(0xc8e8ff);
+    g.fillRect(2, 1, 5, 4);
+    g.fillStyle(0xffffff);
+    g.fillRect(4, 2, 3, 2);
+    g.generateTexture('buster_pellet_tex', 8, 6);
+    g.clear();
+
+    // Short afterimage crumb
+    g.fillStyle(0x66e8ff, 0.9);
+    g.fillRect(0, 1, 8, 3);
+    g.fillStyle(0xffffff, 0.7);
+    g.fillRect(3, 1, 4, 3);
+    g.generateTexture('buster_trail_tex', 8, 5);
+    g.clear();
+
+    // Stronger muzzle flash (overwrites loaded PNG)
+    g.fillStyle(0xfff3b0);
+    g.fillRect(0, 4, 3, 4);
+    g.fillStyle(0xffffff);
+    g.fillRect(2, 3, 6, 6);
+    g.fillStyle(0x66ffff);
+    g.fillRect(7, 2, 6, 8);
+    g.fillStyle(0xffffff);
+    g.fillRect(8, 4, 8, 4);
+    g.fillStyle(0x9af0ff);
+    g.fillRect(14, 5, 5, 2);
+    g.generateTexture('muzzle_tex', 20, 12);
+    g.clear();
+
+    // Impact burst
+    g.fillStyle(0xfff0a0);
+    g.fillRect(7, 0, 2, 16);
+    g.fillRect(0, 7, 16, 2);
+    g.fillStyle(0xffffff);
+    g.fillRect(6, 6, 4, 4);
+    g.fillStyle(0x66ffff);
+    g.fillRect(2, 2, 2, 2);
+    g.fillRect(12, 2, 2, 2);
+    g.fillRect(2, 12, 2, 2);
+    g.fillRect(12, 12, 2, 2);
+    g.fillStyle(0xffe080);
+    g.fillRect(4, 4, 2, 2);
+    g.fillRect(10, 4, 2, 2);
+    g.fillRect(4, 10, 2, 2);
+    g.fillRect(10, 10, 2, 2);
+    g.generateTexture('spark_tex', 16, 16);
     g.clear();
 
     // 4. Fallback patrol (22x22), used only if the animal sheet is missing
