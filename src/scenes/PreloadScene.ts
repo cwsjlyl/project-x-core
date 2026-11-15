@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { addUiText, waitForUiFonts } from '../systems/UiText';
+import { ensureLookTexture } from '../systems/HeroLook';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -35,28 +36,74 @@ export class PreloadScene extends Phaser.Scene {
     });
 
     this.load.tilemapTiledJSON('stage1', 'assets/maps/stage1.json');
+    this.load.tilemapTiledJSON('stage2', 'assets/maps/stage2.json');
+    this.load.tilemapTiledJSON('stage3', 'assets/maps/stage3.json');
+    this.load.tilemapTiledJSON('stage4', 'assets/maps/stage4.json');
     this.load.image('industrial', 'assets/tiles/industrial.png');
+    this.load.image('tiles_forest', 'assets/tiles/forest.png');
+    this.load.image('tiles_polar', 'assets/tiles/polar.png');
+    this.load.image('tiles_desert', 'assets/tiles/desert.png');
     this.load.image('bg_sky', 'assets/bg/sky.png');
     this.load.image('bg_far', 'assets/bg/far.png');
     this.load.image('bg_mid', 'assets/bg/mid.png');
     this.load.image('bg_sun', 'assets/bg/sun.png');
+    this.load.image('bg_sky_forest', 'assets/bg/sky_forest.png');
+    this.load.image('bg_far_forest', 'assets/bg/far_forest.png');
+    this.load.image('bg_mid_forest', 'assets/bg/mid_forest.png');
+    this.load.image('bg_sky_polar', 'assets/bg/sky_polar.png');
+    this.load.image('bg_far_polar', 'assets/bg/far_polar.png');
+    this.load.image('bg_mid_polar', 'assets/bg/mid_polar.png');
+    this.load.image('bg_moon_polar', 'assets/bg/moon_polar.png');
+    this.load.image('bg_sky_desert', 'assets/bg/sky_desert.png');
+    this.load.image('bg_far_desert', 'assets/bg/far_desert.png');
+    this.load.image('bg_mid_desert', 'assets/bg/mid_desert.png');
+    this.load.image('bg_sun_desert', 'assets/bg/sun_desert.png');
     this.load.image('hud_frame', 'assets/ui/hud_frame.png');
     this.load.image('hud_badge', 'assets/ui/hud_badge.png');
     this.load.image('spark_tex', 'assets/ui/spark.png');
     this.load.image('muzzle_tex', 'assets/ui/muzzle.png');
+    this.load.image('lightning_tex', 'assets/ui/lightning.png');
     this.load.spritesheet('player', 'assets/sprites/player.png', {
       frameWidth: 48,
       frameHeight: 64
     });
+    const gearIds = [
+      'helm_starter', 'helm_scout', 'helm_thunder',
+      'body_starter', 'body_energy', 'body_leaf',
+      'arms_starter', 'arms_rapid', 'arms_frost',
+      'legs_starter', 'legs_airdash', 'legs_sand'
+    ];
+    for (const id of gearIds) {
+      this.load.spritesheet(`gear_${id}`, `assets/sprites/gear/${id}.png`, {
+        frameWidth: 48,
+        frameHeight: 64
+      });
+    }
     this.load.spritesheet('animals', 'assets/sprites/animals.png', {
       frameWidth: 24,
       frameHeight: 24
     });
+    this.load.spritesheet('animals_forest', 'assets/sprites/animals_forest.png', {
+      frameWidth: 24,
+      frameHeight: 24
+    });
+    this.load.spritesheet('animals_polar', 'assets/sprites/animals_polar.png', {
+      frameWidth: 24,
+      frameHeight: 24
+    });
+    this.load.spritesheet('animals_desert', 'assets/sprites/animals_desert.png', {
+      frameWidth: 24,
+      frameHeight: 24
+    });
     this.load.image('boss', 'assets/sprites/boss.png');
+    this.load.image('boss_forest', 'assets/sprites/boss_forest.png');
+    this.load.image('boss_polar', 'assets/sprites/boss_polar.png');
+    this.load.image('boss_desert', 'assets/sprites/boss_desert.png');
   }
 
   create(): void {
     this.bakePixelTextures();
+    ensureLookTexture(this);
     this.createPlayerAnims();
     this.createAnimalAnims();
     void this.startWhenReady();
@@ -68,7 +115,8 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   private createPlayerAnims(): void {
-    if (!this.textures.exists('player')) return;
+    const sheet = this.textures.exists('player_look') ? 'player_look' : 'player';
+    if (!this.textures.exists(sheet)) return;
     const mk = (
       key: string,
       frames: Phaser.Types.Animations.AnimationFrame[] | { start: number; end?: number },
@@ -78,31 +126,39 @@ export class PreloadScene extends Phaser.Scene {
       if (this.anims.exists(key)) return;
       const list = Array.isArray(frames)
         ? frames
-        : this.anims.generateFrameNumbers('player', { start: frames.start, end: frames.end ?? frames.start });
+        : this.anims.generateFrameNumbers(sheet, { start: frames.start, end: frames.end ?? frames.start });
       this.anims.create({ key, frames: list, frameRate, repeat });
     };
     mk('player-idle', { start: 0, end: 1 }, 4, -1);
     mk('player-walk', { start: 2, end: 3 }, 8, -1);
-    mk('player-jump', [{ key: 'player', frame: 4 }], 1, -1);
-    mk('player-dash', [{ key: 'player', frame: 5 }], 1, -1);
-    mk('player-shoot', [{ key: 'player', frame: 6 }], 1, -1);
-    mk('player-wall', [{ key: 'player', frame: 7 }], 1, -1);
+    mk('player-jump', [{ key: sheet, frame: 4 }], 1, -1);
+    mk('player-dash', [{ key: sheet, frame: 5 }], 1, -1);
+    mk('player-shoot', [{ key: sheet, frame: 6 }], 1, -1);
+    mk('player-wall', [{ key: sheet, frame: 7 }], 1, -1);
   }
 
   private createAnimalAnims(): void {
-    if (!this.textures.exists('animals')) return;
-    const mk = (key: string, start: number, end: number): void => {
-      if (this.anims.exists(key)) return;
+    const mk = (sheet: string, key: string, start: number, end: number): void => {
+      if (!this.textures.exists(sheet) || this.anims.exists(key)) return;
       this.anims.create({
         key,
-        frames: this.anims.generateFrameNumbers('animals', { start, end }),
+        frames: this.anims.generateFrameNumbers(sheet, { start, end }),
         frameRate: 4,
         repeat: -1
       });
     };
-    mk('animal-crab', 0, 1);
-    mk('animal-gull', 2, 3);
-    mk('animal-puppy', 4, 5);
+    mk('animals', 'animal-crab', 0, 1);
+    mk('animals', 'animal-gull', 2, 3);
+    mk('animals', 'animal-puppy', 4, 5);
+    mk('animals_forest', 'animal-squirrel', 0, 1);
+    mk('animals_forest', 'animal-owl', 2, 3);
+    mk('animals_forest', 'animal-fox', 4, 5);
+    mk('animals_polar', 'animal-penguin', 0, 1);
+    mk('animals_polar', 'animal-seal', 2, 3);
+    mk('animals_polar', 'animal-cub', 4, 5);
+    mk('animals_desert', 'animal-lizard', 0, 1);
+    mk('animals_desert', 'animal-fennec', 2, 3);
+    mk('animals_desert', 'animal-scorpion', 4, 5);
   }
 
   /** Bake original pixel textures into the Texture Manager (no ripped sprites). */
@@ -268,6 +324,22 @@ export class PreloadScene extends Phaser.Scene {
     g.fillStyle(0xffe066);
     g.fillRect(8, 4, 2, 2);
     g.generateTexture('station_tex', 18, 24);
+    g.clear();
+
+    // Chip aura (soft pixel ring)
+    g.fillStyle(0x66ffff, 0.35);
+    g.fillCircle(10, 10, 10);
+    g.fillStyle(0xffffff, 0.5);
+    g.fillCircle(10, 10, 4);
+    g.generateTexture('aura_tex', 20, 20);
+    g.clear();
+
+    // Small-enemy projectiles
+    g.fillStyle(0xe8c070);
+    g.fillCircle(5, 5, 5);
+    g.fillStyle(0xfff3c0);
+    g.fillCircle(5, 5, 2);
+    g.generateTexture('enemy_shot_tex', 10, 10);
     g.destroy();
   }
 }

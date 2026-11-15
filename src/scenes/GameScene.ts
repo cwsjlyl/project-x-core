@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Player, type ShotPayload } from '../entities/Player';
-import { ThunderRhino, type BossShotRequest } from '../entities/Boss';
+import { StageBoss, type BossShotRequest } from '../entities/Boss';
+import { createAnimalEnemy, type AnimalEnemy, type EnemyShotRequest } from '../entities/Enemy';
 import { EquipmentSystem, ITEM_CATALOG } from '../systems/Equipment';
 import { EquipmentUI } from '../systems/EquipmentUI';
 import { GameInput } from '../systems/GameInput';
@@ -8,15 +9,10 @@ import { loadStage, type StageData } from '../systems/MapLoader';
 import { TouchControls } from '../systems/TouchControls';
 import { addUiText, type UiText } from '../systems/UiText';
 import { GameHud } from '../systems/Hud';
-import { ScienceProgress, TOPIC_BY_ID, type TopicId } from '../systems/ScienceBank';
+import { ScienceProgress, TOPIC_BY_ID, pickBossQuestion, type TopicId } from '../systems/ScienceBank';
 import { ScienceUI } from '../systems/ScienceUI';
-import { BOSS_NAME } from '../constants';
-
-interface EnemySprite extends Phaser.Physics.Arcade.Sprite {
-  hp: number;
-  patrolMin: number;
-  patrolMax: number;
-}
+import { STAGES, isStageId, type StageDef, type StageId, type EnemyKind } from '../systems/Stages';
+import { finiteNumber, formatDamageText, isPositiveDamage } from '../systems/CombatMath';
 
 const PICKUP_TINT: Record<string, number> = {
   helmet: 0x66e0ff,
@@ -26,14 +22,34 @@ const PICKUP_TINT: Record<string, number> = {
   chip: 0xff66cc
 };
 
+const QUIZ_THRESHOLDS = [0.75, 0.5, 0.25] as const;
+
+interface SavedPlayer {
+  level: number;
+  exp: number;
+  nextExp: number;
+  baseMaxHp: number;
+  hp: number;
+  baseAtk: number;
+}
+
+interface RunState {
+  equipment: EquipmentSystem;
+  science: ScienceProgress;
+  player: SavedPlayer;
+}
+
 export class GameScene extends Phaser.Scene {
   private player!: Player;
-  private boss!: ThunderRhino;
+  private boss!: StageBoss;
   private stage!: StageData;
+  private stageId: StageId = 'beach';
+  private stageDef!: StageDef;
   private bulletPool!: Phaser.Physics.Arcade.Group;
   private ghostPool!: Phaser.GameObjects.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private bossShots!: Phaser.Physics.Arcade.Group;
+  private enemyShots!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
   private playerLight: Phaser.GameObjects.Light | null = null;
   private hud!: GameHud;
@@ -56,21 +72,25 @@ export class GameScene extends Phaser.Scene {
   private doorBlocker!: Phaser.Physics.Arcade.Image;
   private fightLocked = false;
   private battleClear = false;
+  private victory = false;
   private doorHintCooldown = 0;
   private checkpoint: { x: number; y: number } = { x: 80, y: 200 };
   private statusTimer = 0;
   private skyLayer!: Phaser.GameObjects.TileSprite;
   private farLayer!: Phaser.GameObjects.TileSprite;
   private midLayer!: Phaser.GameObjects.TileSprite;
-
+  private triggeredQuizzes = new Set<number>();
+  private quizQueue: number[] = [];
+  private quizBusy = false;
 
   constructor() {
     super('GameScene');
   }
 
   create(): void {
+    this.restoreRun();
     this.useLights = this.tryEnableLights();
-    this.stage = loadStage(this, this.useLights);
+    this.stage = loadStage(this, this.useLights, this.stageDef.mapKey, this.stageDef.tilesetKey);
 
     const { worldWidth, worldHeight, playerSpawn, arena } = this.stage;
     this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
@@ -86,12 +106,21 @@ export class GameScene extends Phaser.Scene {
       allowGravity: false
     });
     this.ghostPool = this.add.group({
-      defaultKey: this.textures.exists('player') ? 'player' : 'player_tex',
+      defaultKey: this.textures.exists('player_look')
+        ? 'player_look'
+        : this.textures.exists('player')
+          ? 'player'
+          : 'player_tex',
       maxSize: 16
     });
     this.bossShots = this.physics.add.group({
       defaultKey: 'boss_bolt_tex',
       maxSize: 30,
+      allowGravity: false
+    });
+    this.enemyShots = this.physics.add.group({
+      defaultKey: 'enemy_shot_tex',
+      maxSize: 20,
       allowGravity: false
     });
     this.pickups = this.physics.add.group({ allowGravity: false });
@@ -108,7 +137,8 @@ export class GameScene extends Phaser.Scene {
       (gx, gy, flip) => this.spawnDashGhost(gx, gy, flip)
     );
     this.player.setDepth(10);
-    // Keep the photo sprite's real colours (Light2D tints it cyan).
+    const saved = this.registry.get('runState') as RunState | undefined;
+    if (saved?.player) this.player.restore(saved.player);
 
     this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
@@ -118,12 +148,18 @@ export class GameScene extends Phaser.Scene {
     this.spawnMappedPickups();
     this.spawnScienceStations();
 
-    this.boss = new ThunderRhino(
+    this.boss = new StageBoss(
       this,
       this.stage.bossSpawn.x,
       this.stage.bossSpawn.y,
       arena,
-      (req) => this.spawnBossShot(req)
+      (req) => this.spawnBossShot(req),
+      {
+        name: this.stageDef.bossName,
+        textureKey: this.stageDef.bossTexture,
+        theme: this.stageDef.bossTheme,
+        maxHp: this.stageDef.bossMaxHp
+      }
     );
     this.applyLight(this.boss);
 
@@ -135,7 +171,7 @@ export class GameScene extends Phaser.Scene {
     this.doorBlocker.setDisplaySize(this.stage.door.width, this.stage.door.height);
     this.doorBlocker.refreshBody();
     this.doorBlocker.setDepth(5);
-    if (this.science.allCleared) {
+    if (!this.stageDef.requiresStations || this.science.allCleared) {
       this.doorBlocker.disableBody(true, true);
     } else {
       this.doorBlocker.setVisible(true);
@@ -156,30 +192,39 @@ export class GameScene extends Phaser.Scene {
       this.spawnSpark(s.x, s.y, 0xffcc66);
       this.recycleBossShot(s);
     });
+    this.physics.add.collider(this.enemyShots, this.stage.solid, (shot) => {
+      const s = shot as Phaser.Physics.Arcade.Sprite;
+      this.recycleEnemyShot(s);
+    });
 
     this.physics.add.overlap(this.bulletPool, this.enemies, (bObj, eObj) => {
-      this.onBulletHitEnemy(
-        bObj as Phaser.Physics.Arcade.Sprite,
-        eObj as EnemySprite
-      );
+      this.onBulletHitEnemy(bObj as Phaser.Physics.Arcade.Sprite, eObj as AnimalEnemy);
     });
     this.physics.add.overlap(this.bulletPool, this.boss, (bObj) => {
       this.onBulletHitBoss(bObj as Phaser.Physics.Arcade.Sprite);
     });
-    this.physics.add.overlap(this.player, this.enemies, () => {
-      this.player.takeDamage(15);
+    this.physics.add.overlap(this.player, this.enemies, (_p, eObj) => {
+      const enemy = eObj as AnimalEnemy;
+      if (enemy.active) this.player.takeDamage(finiteNumber(enemy.contactDamage, 10));
     });
     this.physics.add.overlap(this.player, this.boss, () => {
-      if (this.boss.fightStarted && !this.boss.defeated) {
+      if (this.boss.fightStarted && !this.boss.defeated && !this.boss.isStunned) {
         this.player.takeDamage(this.boss.contactDamage);
       }
     });
     this.physics.add.overlap(this.player, this.bossShots, (_p, sObj) => {
       const shot = sObj as Phaser.Physics.Arcade.Sprite;
       if (!shot.active || this.boss.defeated) return;
-      const dmg = (shot.getData('damage') as number) || 12;
+      const dmg = finiteNumber(shot.getData('damage'), 12);
       this.player.takeDamage(dmg);
       this.recycleBossShot(shot);
+    });
+    this.physics.add.overlap(this.player, this.enemyShots, (_p, sObj) => {
+      const shot = sObj as Phaser.Physics.Arcade.Sprite;
+      if (!shot.active) return;
+      const dmg = finiteNumber(shot.getData('damage'), 8);
+      this.player.takeDamage(dmg);
+      this.recycleEnemyShot(shot);
     });
     this.physics.add.overlap(this.player, this.pickups, (_p, pObj) => {
       this.collectPickup(pObj as Phaser.Physics.Arcade.Sprite);
@@ -199,9 +244,13 @@ export class GameScene extends Phaser.Scene {
       () => this.touch.setPaused(false)
     );
 
-    this.showBanner(`陽光沙灘　—　先探學習站，再挑戰${BOSS_NAME}`, 2800);
-    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('preview') === 'science') {
-      this.openSciencePreview('sound');
+    this.showBanner(this.stageDef.intro, 2800);
+    this.applyDebugOrPreview();
+    if (this.debugParam()) {
+      (window as unknown as { __xcoreDebug?: object }).__xcoreDebug = {
+        hitBoss: (n?: number) => this.debugHitBoss(n ?? 80),
+        forceEnemyAttack: () => this.debugForceEnemyAttack()
+      };
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.removeAllKeys(true);
@@ -214,6 +263,11 @@ export class GameScene extends Phaser.Scene {
     this.syncParallax();
 
     if (this.scienceUI?.isOpen) {
+      this.updateHud();
+      return;
+    }
+
+    if (this.victory) {
       this.updateHud();
       return;
     }
@@ -258,19 +312,28 @@ export class GameScene extends Phaser.Scene {
     this.bossShots.children.each((child) => {
       const b = child as Phaser.Physics.Arcade.Sprite;
       if (!b.active) return true;
-      const life = (b.getData('life') as number) - delta;
+      const life = finiteNumber(b.getData('life'), 0) - delta;
       b.setData('life', life);
       if (life <= 0 || b.x < cam.left - 60 || b.x > cam.right + 60 || b.y > 300 || b.y < -40) {
         this.recycleBossShot(b);
       }
       return true;
     });
+    this.enemyShots.children.each((child) => {
+      const b = child as Phaser.Physics.Arcade.Sprite;
+      if (!b.active) return true;
+      const life = finiteNumber(b.getData('life'), 0) - delta;
+      b.setData('life', life);
+      if (life <= 0 || b.x < cam.left - 60 || b.x > cam.right + 60 || b.y > 300 || b.y < -40) {
+        this.recycleEnemyShot(b);
+      }
+      return true;
+    });
 
     this.enemies.children.each((child) => {
-      const e = child as EnemySprite;
-      if (!e.active) return true;
-      if (e.x <= e.patrolMin) e.setVelocityX(55);
-      if (e.x >= e.patrolMax) e.setVelocityX(-55);
+      const e = child as AnimalEnemy;
+      if (!e.active || !e.updateEnemy) return true;
+      e.updateEnemy(delta, this.player);
       return true;
     });
 
@@ -281,7 +344,7 @@ export class GameScene extends Phaser.Scene {
     if (this.statusTimer > 0) {
       this.statusTimer -= delta;
       if (this.statusTimer <= 0) {
-        if (!this.player.dead && !this.battleClear) this.messageText.setVisible(false);
+        if (!this.player.dead && !this.battleClear && !this.victory) this.messageText.setVisible(false);
       }
     }
 
@@ -294,9 +357,46 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
+  private restoreRun(): void {
+    const params = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+    const debug = params?.get('debug') ?? '';
+    const saved = this.registry.get('runState') as RunState | undefined;
+    const registryStage = this.registry.get('stageId');
+    let stageId: StageId = 'beach';
+    if (isStageId(typeof registryStage === 'string' ? registryStage : '')) {
+      stageId = registryStage as StageId;
+    } else if (isStageId(debug)) {
+      stageId = debug;
+    }
+    this.stageId = stageId;
+    this.stageDef = STAGES[stageId];
+    if (saved?.equipment) this.equipment = saved.equipment;
+    if (saved?.science) this.science = saved.science;
+  }
+
+  private captureRun(): RunState {
+    return {
+      equipment: this.equipment,
+      science: this.science,
+      player: {
+        level: this.player.level,
+        exp: this.player.exp,
+        nextExp: this.player.nextExp,
+        baseMaxHp: this.player.baseMaxHp,
+        hp: this.player.hp,
+        baseAtk: this.player.baseAtk
+      }
+    };
+  }
+
+  private goToStage(next: StageId): void {
+    if (next === this.stageId) return;
+    this.registry.set('runState', this.captureRun());
+    this.registry.set('stageId', next);
+    this.scene.restart();
+  }
+
   private tryEnableLights(): boolean {
-    // Sunny beach: skip Light2D gloom so colours stay bright.
-    // The photo hero must also stay off the Light2D pipeline.
     return false;
   }
 
@@ -311,26 +411,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnMappedEnemies(): void {
-    const kinds: Array<{ key: string; frame: number }> = [
-      { key: 'animal-crab', frame: 0 },
-      { key: 'animal-gull', frame: 2 },
-      { key: 'animal-puppy', frame: 4 }
-    ];
-    const useAnimals = this.textures.exists('animals');
+    const kinds = this.stageDef.defaultKinds;
+    const sheet = this.textures.exists(this.stageDef.animalKey) ? this.stageDef.animalKey : 'enemy_tex';
     this.stage.enemies.forEach((zone, i) => {
-      const kind = kinds[i % kinds.length];
-      const texture = useAnimals ? 'animals' : 'enemy_tex';
-      const enemy = this.enemies.create(zone.x, zone.y, texture, useAnimals ? kind.frame : undefined) as EnemySprite;
-      // Do not apply Light2D — it would muddy the animal colours.
-      enemy.setCollideWorldBounds(true);
-      enemy.setDepth(9);
-      enemy.hp = 45;
-      enemy.patrolMin = zone.patrolMin;
-      enemy.patrolMax = zone.patrolMax;
-      enemy.setVelocityX(55);
-      if (useAnimals && this.anims.exists(kind.key)) {
-        enemy.play(kind.key, true);
-      }
+      const kind = (zone.kind as EnemyKind | undefined) ?? kinds[i % kinds.length];
+      const frame = kindFrame(kind);
+      createAnimalEnemy(
+        this,
+        this.enemies,
+        zone.x,
+        zone.y,
+        kind,
+        zone.patrolMin,
+        zone.patrolMax,
+        sheet,
+        sheet === 'enemy_tex' ? 0 : frame,
+        (req) => this.spawnEnemyShot(req)
+      );
     });
   }
 
@@ -369,7 +466,7 @@ export class GameScene extends Phaser.Scene {
 
   private checkBossTrigger(): void {
     if (this.fightLocked || this.battleClear) return;
-    if (!this.science.allCleared) return;
+    if (this.stageDef.requiresStations && !this.science.allCleared) return;
     const t = this.stage.trigger;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const px = body.center.x;
@@ -381,7 +478,8 @@ export class GameScene extends Phaser.Scene {
 
   private updateDoorLock(delta: number): void {
     if (this.doorHintCooldown > 0) this.doorHintCooldown -= delta;
-    if (this.science.allCleared) {
+    const unlocked = !this.stageDef.requiresStations || this.science.allCleared;
+    if (unlocked) {
       if (!this.fightLocked && this.doorBlocker.active) {
         this.doorBlocker.disableBody(true, true);
       }
@@ -401,7 +499,7 @@ export class GameScene extends Phaser.Scene {
       body.top <= d.y + d.height;
     if (touching && this.doorHintCooldown <= 0) {
       const left = this.science.totalStations - this.science.clearedCount;
-      this.showBanner(`仲有 ${left} 個學習站未完成，完成後先挑戰${BOSS_NAME}啦！`, 2400);
+      this.showBanner(`仲有 ${left} 個學習站未完成，完成後先挑戰${this.stageDef.bossName}啦！`, 2400);
       this.doorHintCooldown = 2800;
     }
   }
@@ -428,6 +526,7 @@ export class GameScene extends Phaser.Scene {
       const topic = (sObj as Phaser.Physics.Arcade.Sprite).getData('topic') as TopicId;
       if (topic) this.nearbyTopic = topic;
     });
+    this.refreshStationLooks();
   }
 
   private tryOpenScienceStation(): boolean {
@@ -437,9 +536,14 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
     const firstVisit = !this.autoOpened.has(topic);
-    this.stationHint.setText(
-      firstVisit ? '重疊學習站即可開始　或按「跳」' : '按「跳」再練習呢個學習站'
-    );
+    const corrects = this.science.correctCount(topic);
+    if (this.science.isCleared(topic)) {
+      this.stationHint.setText('呢個學習站完成啦　按「跳」再練習');
+    } else if (corrects === 1) {
+      this.stationHint.setText('再答對一題就完成啦　按「跳」繼續');
+    } else {
+      this.stationHint.setText(firstVisit ? '重疊學習站即可開始　或按「跳」' : '按「跳」再練習呢個學習站');
+    }
     this.stationHint.setVisible(true);
     if (firstVisit || this.gameInput.jumpPressed) {
       this.autoOpened.add(topic);
@@ -455,7 +559,6 @@ export class GameScene extends Phaser.Scene {
     const topic = this.nearbyTopic;
     this.nearbyTopic = null;
     if (!topic) return null;
-    // Confirm still overlapping this frame (overlap callbacks run during physics).
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     let found: TopicId | null = null;
     this.stationGroup.children.each((child) => {
@@ -476,17 +579,20 @@ export class GameScene extends Phaser.Scene {
   private onScienceProgress(): void {
     this.updateHud();
     this.refreshStationLooks();
-    if (this.science.allCleared && !this.fightLocked) {
+    if (this.science.allCleared && this.stageDef.requiresStations && !this.fightLocked) {
       this.doorBlocker.disableBody(true, true);
-      this.showBanner(`五個學習站都完成喇！可以去挑戰${BOSS_NAME}。`, 2800);
+      this.showBanner(`五個學習站都完成喇！可以去挑戰${this.stageDef.bossName}。`, 2800);
     }
   }
 
   private refreshStationLooks(): void {
+    if (!this.stationGroup) return;
     this.stationGroup.children.each((child) => {
       const spr = child as Phaser.Physics.Arcade.Sprite;
       const topic = spr.getData('topic') as TopicId;
       if (this.science.isCleared(topic)) spr.setTint(0x66ffaa);
+      else if (this.science.correctCount(topic) >= 1) spr.setTint(0xffe066);
+      else spr.clearTint();
       return true;
     });
   }
@@ -499,13 +605,16 @@ export class GameScene extends Phaser.Scene {
 
   private beginBossFight(): void {
     this.fightLocked = true;
+    this.triggeredQuizzes.clear();
+    this.quizQueue = [];
+    this.quizBusy = false;
     this.doorBlocker.enableBody(true, this.doorBlocker.x, this.doorBlocker.y, true, true);
     this.doorBlocker.setDisplaySize(this.stage.door.width, this.stage.door.height);
     this.doorBlocker.refreshBody();
     const a = this.stage.arena;
     this.cameras.main.setBounds(a.x, a.y, a.width, a.height);
     this.boss.startFight();
-    this.showBanner(`${BOSS_NAME}　降臨`, 1800);
+    this.showBanner(`${this.stageDef.bossName}　降臨`, 1800);
     this.bossBarBg.setVisible(true);
     this.bossBarFill.setVisible(true);
     this.bossBarLabel.setVisible(true);
@@ -517,21 +626,38 @@ export class GameScene extends Phaser.Scene {
     this.doorBlocker.disableBody(true, true);
     this.cameras.main.setBounds(0, 0, this.stage.worldWidth, this.stage.worldHeight);
     const leveled = this.player.gainExp(200);
-    const granted = this.equipment.grant('helm_thunder');
-    const bits = ['關卡清除！'];
-    if (granted) bits.push('獲得：潮汐甲盔');
+    const granted = this.equipment.grant(this.stageDef.rewardId);
+    const bits = [`${this.stageDef.name}清除！`];
+    if (granted) bits.push(`獲得：${this.stageDef.rewardName}`);
     if (leveled) bits.push('LEVEL UP!');
-    this.showBanner(bits.join('　'), 6000);
-    this.messageText.setText(bits.join('\n'));
-    this.messageText.setVisible(true);
+    this.showBanner(bits.join('　'), 2800);
     this.showFloatingText(this.boss.x, this.boss.y - 28, '擊破！', '#00ff88');
     this.equipUI.refresh();
+    const next = this.stageDef.next;
+    if (next) {
+      this.time.delayedCall(2200, () => {
+        this.showBanner(`前往${STAGES[next].name}…`, 1400);
+        this.time.delayedCall(1400, () => this.goToStage(next));
+      });
+    } else {
+      this.time.delayedCall(1600, () => this.showVictory());
+    }
+  }
+
+  private showVictory(): void {
+    this.victory = true;
+    this.showBanner('完滿通關！四個區域嘅科學探索都完成喇！', 999999);
+    this.messageText.setText('完滿通關！\n陽光沙灘、翠影森林、霜白極地、炎陽沙漠\n全部完成喇！');
+    this.messageText.setVisible(true);
   }
 
   private retryFromCheckpoint(): void {
     this.player.reviveAt(this.checkpoint.x, this.checkpoint.y);
     this.messageText.setVisible(false);
     if (this.fightLocked && !this.battleClear) {
+      this.triggeredQuizzes.clear();
+      this.quizQueue = [];
+      this.quizBusy = false;
       this.boss.resetFight(this.stage.bossSpawn.x, this.stage.bossSpawn.y);
       this.showBanner('重新起動　首領戰再開', 1600);
     } else {
@@ -546,7 +672,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (this.fightLocked) {
-      // Respawn just inside the arena so the closed door cannot softlock the player.
       this.checkpoint = {
         x: this.stage.arena.x + 48,
         y: this.stage.playerSpawn.y
@@ -554,15 +679,19 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private onBulletHitEnemy(bullet: Phaser.Physics.Arcade.Sprite, enemy: EnemySprite): void {
+  private onBulletHitEnemy(bullet: Phaser.Physics.Arcade.Sprite, enemy: AnimalEnemy): void {
     if (!bullet.active || !enemy.active) return;
-    const dmg = bullet.getData('damage') as number;
-    const level = bullet.getData('chargeLevel') as number;
-    enemy.hp -= dmg;
+    const dmg = finiteNumber(bullet.getData('damage'));
+    if (!isPositiveDamage(dmg)) {
+      this.recycleBullet(bullet);
+      return;
+    }
+    const level = finiteNumber(bullet.getData('chargeLevel'), 1);
+    const slain = enemy.takeHit(dmg);
     this.spawnSpark(enemy.x, enemy.y, level === 3 ? 0x66ffff : 0xfff0a0);
-    this.showFloatingText(enemy.x, enemy.y - 12, `-${dmg}`, level === 3 ? '#00ffff' : '#ffeb3b');
+    this.showFloatingText(enemy.x, enemy.y - 12, formatDamageText(dmg), level === 3 ? '#00ffff' : '#ffeb3b');
     if (level < 3 || enemy.hp > 0) this.recycleBullet(bullet);
-    if (enemy.hp <= 0) {
+    if (slain) {
       enemy.disableBody(true, true);
       const leveledUp = this.player.gainExp(25);
       if (leveledUp) this.showFloatingText(this.player.x, this.player.y - 24, 'LEVEL UP!', '#00ff88');
@@ -571,17 +700,80 @@ export class GameScene extends Phaser.Scene {
 
   private onBulletHitBoss(bullet: Phaser.Physics.Arcade.Sprite): void {
     if (!bullet.active || !this.boss.active || !this.boss.fightStarted) return;
-    const base = bullet.getData('damage') as number;
-    const level = bullet.getData('chargeLevel') as number;
-    const dmg = Math.round(base * (1 + this.player.derived.bossDamageBonus));
+    const base = finiteNumber(bullet.getData('damage'));
+    if (!isPositiveDamage(base)) {
+      this.recycleBullet(bullet);
+      return;
+    }
+    const level = finiteNumber(bullet.getData('chargeLevel'), 1);
+    const bonus = finiteNumber(this.player.derived?.bossDamageBonus, 0);
+    const dmg = Math.round(base * (1 + bonus));
+    if (!isPositiveDamage(dmg)) {
+      this.recycleBullet(bullet);
+      return;
+    }
+    const prevHp = this.boss.hp;
     const slain = this.boss.takeDamage(dmg);
     this.spawnSpark(this.boss.x, this.boss.y - 8, level === 3 ? 0x66ffff : 0xfff0a0);
-    this.showFloatingText(this.boss.x, this.boss.y - 20, `-${dmg}`, level === 3 ? '#00ffff' : '#ffeb3b');
+    this.showFloatingText(this.boss.x, this.boss.y - 20, formatDamageText(dmg), level === 3 ? '#00ffff' : '#ffeb3b');
     if (level < 3 || this.boss.hp > 0) this.recycleBullet(bullet);
-    if (slain) this.onBossDefeated();
+    if (slain) {
+      this.onBossDefeated();
+      return;
+    }
+    this.queueBossQuizzes(prevHp, this.boss.hp);
+  }
+
+  private queueBossQuizzes(prevHp: number, newHp: number): void {
+    const max = this.boss.maxHp;
+    if (!Number.isFinite(prevHp) || !Number.isFinite(newHp) || !Number.isFinite(max) || max <= 0) return;
+    if (newHp <= 0) return;
+    for (const t of QUIZ_THRESHOLDS) {
+      if (this.triggeredQuizzes.has(t)) continue;
+      if (prevHp / max > t && newHp / max <= t) {
+        this.triggeredQuizzes.add(t);
+        this.quizQueue.push(t);
+      }
+    }
+    this.tryStartBossQuiz();
+  }
+
+  private tryStartBossQuiz(): void {
+    if (this.quizBusy || this.quizQueue.length === 0) return;
+    if (this.boss.defeated || this.scienceUI.isOpen || this.player.dead) return;
+    this.quizQueue.shift();
+    this.quizBusy = true;
+    const question = pickBossQuestion(this.science.answeredIds);
+    this.touch.setPaused(true);
+    this.scienceUI.showBossQuestion(question, (correct) => {
+      this.touch.setPaused(false);
+      this.playShock(correct);
+      if (correct) this.boss.stun(1500);
+      else this.player.stun(1500, { invuln: true });
+      this.time.delayedCall(1600, () => {
+        this.quizBusy = false;
+        this.tryStartBossQuiz();
+      });
+    });
+  }
+
+  private playShock(hitBoss: boolean): void {
+    const target = hitBoss ? this.boss : this.player;
+    const bolt = this.add.image(target.x, target.y - 20, 'lightning_tex').setDepth(30);
+    bolt.setTint(hitBoss ? 0x66ffff : 0xffee66);
+    this.tweens.add({
+      targets: bolt,
+      alpha: 0,
+      y: target.y - 36,
+      duration: 400,
+      onComplete: () => bolt.destroy()
+    });
+    this.showBanner(hitBoss ? '答對！電擊首領 1.5 秒' : '答錯！主角被電擊 1.5 秒', 1600);
   }
 
   private spawnBullet(payload: ShotPayload): void {
+    const damage = finiteNumber(payload.damage);
+    if (!isPositiveDamage(damage)) return;
     const bullet = this.bulletPool.get(payload.x, payload.y, 'buster_tex') as
       | Phaser.Physics.Arcade.Sprite
       | null;
@@ -589,7 +781,7 @@ export class GameScene extends Phaser.Scene {
     bullet.enableBody(true, payload.x, payload.y, true, true);
     this.applyLight(bullet);
     bullet.setDepth(15);
-    bullet.setData('damage', payload.damage);
+    bullet.setData('damage', damage);
     bullet.setData('chargeLevel', payload.chargeLevel);
     const scale = payload.chargeLevel === 3 ? 2.0 : payload.chargeLevel === 2 ? 1.4 : 0.9;
     bullet.setScale(scale);
@@ -602,6 +794,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private recycleBullet(bullet: Phaser.Physics.Arcade.Sprite): void {
+    bullet.setData('damage', 0);
     bullet.disableBody(true, true);
   }
 
@@ -641,7 +834,8 @@ export class GameScene extends Phaser.Scene {
     this.applyLight(shot);
     shot.setDepth(14);
     shot.setScale(1);
-    shot.setData('damage', req.damage);
+    const damage = isPositiveDamage(req.damage) ? req.damage : 12;
+    shot.setData('damage', damage);
     shot.setData('life', 2600);
     const body = shot.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(req.gravity);
@@ -652,6 +846,32 @@ export class GameScene extends Phaser.Scene {
   }
 
   private recycleBossShot(shot: Phaser.Physics.Arcade.Sprite): void {
+    shot.setData('damage', 0);
+    shot.disableBody(true, true);
+  }
+
+  private spawnEnemyShot(req: EnemyShotRequest): void {
+    const shot = this.enemyShots.get(req.x, req.y, 'enemy_shot_tex') as Phaser.Physics.Arcade.Sprite | null;
+    if (!shot) return;
+    shot.enableBody(true, req.x, req.y, true, true);
+    shot.setTexture('enemy_shot_tex');
+    shot.setDepth(13);
+    shot.setScale(req.kind === 'drop' ? 1.1 : 1);
+    const damage = isPositiveDamage(req.damage) ? req.damage : 8;
+    shot.setData('damage', damage);
+    shot.setData('life', req.life);
+    const body = shot.body as Phaser.Physics.Arcade.Body;
+    body.setAllowGravity(req.gravity);
+    shot.setVelocity(req.vx, req.vy);
+    if (req.kind === 'nut') shot.setTint(0xc08040);
+    else if (req.kind === 'snow') shot.setTint(0xe8f4ff);
+    else if (req.kind === 'sting') shot.setTint(0xc04030);
+    else if (req.kind === 'drop') shot.setTint(0xf0e0a0);
+    else shot.setTint(0xe8c070);
+  }
+
+  private recycleEnemyShot(shot: Phaser.Physics.Arcade.Sprite): void {
+    shot.setData('damage', 0);
     shot.disableBody(true, true);
   }
 
@@ -707,7 +927,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(211)
       .setVisible(false);
-    this.bossBarLabel = addUiText(this, 240, 8, BOSS_NAME, {
+    this.bossBarLabel = addUiText(this, 240, 8, this.stageDef.bossName, {
       size: 12,
       color: '#ffe8a0',
       originX: 0.5,
@@ -727,10 +947,12 @@ export class GameScene extends Phaser.Scene {
   private createAtmosphere(): void {
     const w = this.scale.width;
     const h = this.scale.height;
-    this.skyLayer = this.add.tileSprite(0, 0, w, h, 'bg_sky').setOrigin(0, 0).setScrollFactor(0).setDepth(-30);
-    this.add.image(400, 48, 'bg_sun').setScrollFactor(0).setDepth(-25);
-    this.farLayer = this.add.tileSprite(0, 0, w, h, 'bg_far').setOrigin(0, 0).setScrollFactor(0).setDepth(-20);
-    this.midLayer = this.add.tileSprite(0, 0, w, h, 'bg_mid').setOrigin(0, 0).setScrollFactor(0).setDepth(-10);
+    this.skyLayer = this.add.tileSprite(0, 0, w, h, this.stageDef.bgSky).setOrigin(0, 0).setScrollFactor(0).setDepth(-30);
+    if (this.stageDef.bgProp && this.textures.exists(this.stageDef.bgProp)) {
+      this.add.image(this.stageDef.bgPropX, this.stageDef.bgPropY, this.stageDef.bgProp).setScrollFactor(0).setDepth(-25);
+    }
+    this.farLayer = this.add.tileSprite(0, 0, w, h, this.stageDef.bgFar).setOrigin(0, 0).setScrollFactor(0).setDepth(-20);
+    this.midLayer = this.add.tileSprite(0, 0, w, h, this.stageDef.bgMid).setOrigin(0, 0).setScrollFactor(0).setDepth(-10);
     this.syncParallax();
   }
 
@@ -776,9 +998,13 @@ export class GameScene extends Phaser.Scene {
 
   private updateBossBar(): void {
     if (!this.boss?.fightStarted) return;
-    const ratio = Math.max(0, this.boss.hp / this.boss.maxHp);
+    const max = this.boss.maxHp;
+    const hp = finiteNumber(this.boss.hp, 0);
+    const ratio = Number.isFinite(max) && max > 0 ? Phaser.Math.Clamp(hp / max, 0, 1) : 0;
     this.bossBarFill.width = 200 * ratio;
-    const label = this.boss.defeated ? `${BOSS_NAME}　已擊破` : `${BOSS_NAME}　${this.boss.phaseLabel}`;
+    const label = this.boss.defeated
+      ? `${this.stageDef.bossName}　已擊破`
+      : `${this.stageDef.bossName}　${this.boss.phaseLabel}`;
     this.bossBarLabel.setText(label);
     if (this.boss.defeated) this.bossBarFill.setFillStyle(0x668088);
     else if (this.boss.phase === 3) this.bossBarFill.setFillStyle(0xff55cc);
@@ -793,6 +1019,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showFloatingText(x: number, y: number, msg: string, color: string): void {
+    if (!msg || msg.includes('NaN')) return;
     const txt = addUiText(this, x, y, msg, {
       size: 12,
       color,
@@ -807,4 +1034,110 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => txt.destroy()
     });
   }
+
+  private debugParam(): string {
+    if (typeof location === 'undefined') return '';
+    return new URLSearchParams(location.search).get('debug') ?? '';
+  }
+
+  private applyDebugOrPreview(): void {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('preview') === 'science') {
+      this.openSciencePreview('sound');
+    }
+    const debug = this.debugParam();
+    if (!debug) return;
+    // Query-param debug only; not shown in the student-facing UI. See WORKLOG.md.
+    if (debug === 'science-explain') {
+      this.time.delayedCall(200, () => this.scienceUI.previewCorrect('sound'));
+    } else if (debug === 'boss' || debug === 'boss-quiz' || debug === 'boss-damage') {
+      this.time.delayedCall(200, () => this.debugStartBoss(debug === 'boss-quiz'));
+    } else if (debug === 'enemy-attack') {
+      this.time.delayedCall(200, () => this.debugEnemyAttack());
+    } else if (debug === 'equip-a' || debug === 'equip-b') {
+      this.time.delayedCall(200, () => this.debugEquipLook(debug === 'equip-b'));
+    }
+  }
+
+  /** Preview hook: jump into the current stage's boss arena. */
+  debugStartBoss(forceQuiz = false): void {
+    if (this.stageDef.requiresStations) {
+      for (const topic of ['sound', 'force', 'magnet', 'materials', 'weather'] as TopicId[]) {
+        this.science.topicCorrects[topic] = 2;
+        this.science.clearedTopics.add(topic);
+      }
+      this.doorBlocker.disableBody(true, true);
+    }
+    this.player.reviveAt(this.stage.bossSpawn.x - 90, this.stage.playerSpawn.y);
+    this.beginBossFight();
+    this.boss.clearInvuln();
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(this.stage.bossSpawn.x - 30, 135);
+    if (forceQuiz) {
+      const max = this.boss.maxHp;
+      const prev = this.boss.hp;
+      this.boss.hp = Math.round(max * 0.74);
+      this.queueBossQuizzes(prev, this.boss.hp);
+    }
+  }
+
+  debugEnemyAttack(): void {
+    const first = this.enemies.getFirstAlive() as AnimalEnemy | null;
+    if (!first) return;
+    this.player.reviveAt(first.x + 40, first.y);
+    this.panPreviewTo(first.x, 135);
+  }
+
+  debugHitBoss(amount = 80): void {
+    if (!this.boss?.fightStarted) this.debugStartBoss(false);
+    this.boss.clearInvuln();
+    const dmg = Math.max(1, Math.round(amount));
+    const slain = this.boss.takeDamage(dmg);
+    this.spawnSpark(this.boss.x, this.boss.y - 8, 0x66ffff);
+    this.showFloatingText(this.boss.x, this.boss.y - 20, formatDamageText(dmg), '#00ffff');
+    this.updateBossBar();
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(this.boss.x - 20, 135);
+    if (slain) this.onBossDefeated();
+  }
+
+  debugForceEnemyAttack(): void {
+    const first = this.enemies.getFirstAlive() as AnimalEnemy | null;
+    if (!first) return;
+    this.player.reviveAt(first.x + 48, this.stage.playerSpawn.y);
+    if (typeof first.previewAttack === 'function') first.previewAttack(this.player);
+    this.panPreviewTo(first.x + 10, 135);
+  }
+
+  debugEquipLook(alt: boolean): void {
+    const grant = [
+      'helm_scout', 'helm_thunder', 'body_energy', 'body_leaf',
+      'arms_rapid', 'arms_frost', 'legs_airdash', 'legs_sand',
+      'chip_breaker', 'chip_double'
+    ];
+    for (const id of grant) this.equipment.grant(id);
+    if (alt) {
+      this.equipment.equip('helm_thunder');
+      this.equipment.equip('body_energy');
+      this.equipment.equip('arms_rapid');
+      this.equipment.equip('legs_airdash');
+      this.equipment.equip('chip_breaker');
+    } else {
+      this.equipment.equip('helm_starter');
+      this.equipment.equip('body_starter');
+      this.equipment.equip('arms_starter');
+      this.equipment.equip('legs_starter');
+    }
+    this.player.refreshLoadout();
+    this.equipUI.refresh();
+  }
+}
+
+function kindFrame(kind: EnemyKind): number {
+  const order: Record<string, number> = {
+    crab: 0, gull: 2, puppy: 4,
+    squirrel: 0, owl: 2, fox: 4,
+    penguin: 0, seal: 2, cub: 4,
+    lizard: 0, fennec: 2, scorpion: 4
+  };
+  return order[kind] ?? 0;
 }
