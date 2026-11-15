@@ -88,10 +88,11 @@ export function loadStage(scene: Phaser.Scene, useLights: boolean): StageData {
   background?.setDepth(0);
   decor?.setDepth(1);
   solid.setDepth(2);
-  // Outdoor dusk stage: keep tile colours warm. Light2D is not applied to
+  // Sunny beach: keep tile colours bright. Light2D is not applied to
   // the tile layers even if the scene requested lights.
   void useLights;
-  background?.setVisible(false);
+  background?.setVisible(true);
+  decor?.setVisible(false);
 
   const worldWidth = map.widthInPixels;
   const worldHeight = map.heightInPixels;

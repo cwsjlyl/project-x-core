@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
-import { addUiText } from './UiText';
+import { addUiText, type UiText } from './UiText';
 import type { GameInput } from './GameInput';
 
 interface PadBtn {
   bg: Phaser.GameObjects.Arc;
-  label: Phaser.GameObjects.Text;
+  label: UiText;
   key: keyof GameInput['touch'];
 }
 

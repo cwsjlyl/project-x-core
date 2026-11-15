@@ -1,14 +1,14 @@
 import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
 import type { ScienceProgress } from './ScienceBank';
-import { addUiText } from './UiText';
+import { addUiText, type UiText } from './UiText';
 
 /** Original slim left-side HUD. Inspired by classic handheld action games, not official art. */
 export class GameHud {
   private hpFill!: Phaser.GameObjects.Rectangle;
   private coreFill!: Phaser.GameObjects.Rectangle;
-  private lvText!: Phaser.GameObjects.Text;
-  private infoText!: Phaser.GameObjects.Text;
+  private lvText!: UiText;
+  private infoText!: UiText;
 
   private readonly frameX = 5;
   private readonly frameY = 26;
@@ -61,7 +61,14 @@ export class GameHud {
       .setScrollFactor(0)
       .setDepth(depth + 2);
 
-    this.infoText = addUiText(s, 32, 28, '', {
+    s.add
+      .rectangle(30, 26, 96, 36, 0x10243a, 0.72)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(depth + 1)
+      .setStrokeStyle(1, 0x0a1828, 0.9);
+
+    this.infoText = addUiText(s, 33, 28, '', {
       size: 12,
       color: '#fff4e0'
     })

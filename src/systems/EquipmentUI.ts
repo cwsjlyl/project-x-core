@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { addUiText } from './UiText';
+import { addUiText, type UiText } from './UiText';
 import type { EquipItem, EquipSlot, EquipmentSystem } from './Equipment';
 
 const SLOT_ORDER: { slot: EquipSlot; label: string }[] = [
@@ -13,11 +13,11 @@ const SLOT_ORDER: { slot: EquipSlot; label: string }[] = [
 
 export class EquipmentUI {
   private readonly root: Phaser.GameObjects.Container;
-  private readonly slotTexts: Phaser.GameObjects.Text[] = [];
+  private readonly slotTexts: UiText[] = [];
   private readonly slotBoxes: Phaser.GameObjects.Rectangle[] = [];
-  private readonly itemTexts: Phaser.GameObjects.Text[] = [];
+  private readonly itemTexts: UiText[] = [];
   private readonly itemBoxes: Phaser.GameObjects.Rectangle[] = [];
-  private descText: Phaser.GameObjects.Text;
+  private descText: UiText;
   private selectedChip: 'chip1' | 'chip2' = 'chip1';
   private open = false;
 

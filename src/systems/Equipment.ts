@@ -53,9 +53,9 @@ export const ITEM_CATALOG: Record<string, EquipItem> = {
   },
   helm_thunder: {
     id: 'helm_thunder',
-    name: '雷霆角盔',
+    name: '潮汐甲盔',
     kind: 'helmet',
-    description: '擊敗雷霆犀後獲得。攻擊 +3，並強化探燈。',
+    description: '擊敗潮汐巨蟹後獲得。攻擊 +3，並強化探燈。',
     effects: { atkBonus: 3, lightRadius: 180 }
   },
   body_starter: {

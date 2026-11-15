@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { addUiText } from './UiText';
+import { addUiText, type UiText } from './UiText';
 import {
   TOPIC_BY_ID,
   pickQuestion,
@@ -11,16 +11,16 @@ import {
 
 interface ChoiceBtn {
   box: Phaser.GameObjects.Rectangle;
-  label: Phaser.GameObjects.Text;
+  label: UiText;
 }
 
 export class ScienceUI {
   private readonly root: Phaser.GameObjects.Container;
-  private readonly titleText: Phaser.GameObjects.Text;
-  private readonly promptText: Phaser.GameObjects.Text;
-  private readonly feedbackText: Phaser.GameObjects.Text;
+  private readonly titleText: UiText;
+  private readonly promptText: UiText;
+  private readonly feedbackText: UiText;
   private readonly continueBtn: Phaser.GameObjects.Rectangle;
-  private readonly continueLabel: Phaser.GameObjects.Text;
+  private readonly continueLabel: UiText;
   private readonly choices: ChoiceBtn[] = [];
   private open = false;
   private topic: TopicId | null = null;
