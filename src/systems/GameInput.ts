@@ -34,7 +34,7 @@ export class GameInput {
   private prevJump = false;
   private prevShoot = false;
   private prevDashTouch = false;
-  private prevEquipTouch = false;
+  private prevEquip = false;
 
   attach(scene: Phaser.Scene): void {
     const kb = scene.input.keyboard;
@@ -81,12 +81,10 @@ export class GameInput {
     this.dashPressed = dashJustKey || (this.touch.dash && !this.prevDashTouch);
     this.prevDashTouch = this.touch.dash;
 
-    const equipJustKey = this.keyEquip
-      ? Phaser.Input.Keyboard.JustDown(this.keyEquip)
-      : false;
-    this.equipPressed =
-      equipJustKey || (this.touch.equip && !this.prevEquipTouch);
-    this.prevEquipTouch = this.touch.equip;
+    // Edge-trigger from isDown so E / 裝 still toggle while the Clock is paused.
+    const equip = !!this.keyEquip?.isDown || this.touch.equip;
+    this.equipPressed = equip && !this.prevEquip;
+    this.prevEquip = equip;
   }
 
   clearGameplay(): void {

@@ -146,6 +146,10 @@ export class ScienceUI {
     this.closeLabel.setVisible(true);
     this.root.setVisible(true);
     this.pauseWorld();
+    if (!this.progress.canAsk(topic)) {
+      this.showFinished(topic);
+      return;
+    }
     this.loadQuestion();
   }
 
@@ -211,6 +215,20 @@ export class ScienceUI {
     this.scene.tweens.resumeAll();
   }
 
+  private showFinished(topic: TopicId): void {
+    const info = TOPIC_BY_ID[topic];
+    this.titleText.setText(info.stationLabel);
+    this.question = null;
+    this.locked = true;
+    this.promptText.setText('呢個學習站完成啦。');
+    this.hideChoices();
+    this.placeFeedback(96);
+    this.feedbackText.setColor('#8ffff4');
+    this.feedbackText.setText('完成啦！每個學習站最多答兩題。科學分只計算答對嘅題目。');
+    this.continueLabel.setText('繼續探索');
+    this.setContinueVisible(true);
+  }
+
   private loadQuestion(): void {
     if (!this.topic) return;
     const info = TOPIC_BY_ID[this.topic];
@@ -218,7 +236,12 @@ export class ScienceUI {
     this.question = pickQuestion(this.topic, this.progress.answeredIds);
     this.promptText.setText(this.question.prompt);
     this.placeFeedback(188);
-    this.feedbackText.setText('揀一個你認為合適嘅答案。答錯都可以再試。');
+    const left = this.progress.remainingAttempts(this.topic);
+    this.feedbackText.setText(
+      left === 1
+        ? '揀一個你認為合適嘅答案。呢個學習站仲有一題。'
+        : '揀一個你認為合適嘅答案。呢個學習站最多可以答兩題。'
+    );
     this.feedbackText.setColor('#b8e6ee');
     this.setContinueVisible(false);
     this.showChoices(this.question);
@@ -267,10 +290,9 @@ export class ScienceUI {
       this.resolved = true;
       let extra = '';
       if (!this.bossMode) {
-        const { justCleared, correctCount, points } = this.progress.markCorrect(q);
-        if (justCleared) extra = `科學分 +${points}！呢個學習站完成啦。`;
-        else if (correctCount === 1) extra = `科學分 +${points}！再答對一題就完成呢個學習站。`;
-        else extra = `科學分 +${points}！`;
+        const { justCleared, points, remaining } = this.progress.markCorrect(q);
+        if (justCleared || remaining <= 0) extra = `科學分 +${points}！呢個學習站完成啦。`;
+        else extra = `科學分 +${points}！仲有一題。`;
         this.onChanged();
       } else {
         extra = '答對喇！電擊會令首領暫停。';
@@ -295,6 +317,18 @@ export class ScienceUI {
         this.continueLabel.setText('繼續戰鬥');
         this.setContinueVisible(true);
         this.layoutAfterAnswer();
+      } else {
+        this.locked = true;
+        this.hideChoices();
+        const { justCleared, remaining } = this.progress.markAttempt(q);
+        let extra = '';
+        if (justCleared || remaining <= 0) extra = '呢個學習站完成啦。';
+        else extra = '仲有一題。';
+        this.feedbackText.setText(`答錯喇！${q.hint}　${extra}`);
+        this.continueLabel.setText('繼續探索');
+        this.setContinueVisible(true);
+        this.layoutAfterAnswer();
+        this.onChanged();
       }
     }
   }

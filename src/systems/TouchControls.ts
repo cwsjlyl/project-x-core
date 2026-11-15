@@ -64,7 +64,7 @@ export class TouchControls {
     this.buttons.push({ bg, label, key });
   }
 
-  setPaused(paused: boolean): void {
+  setPaused(paused: boolean, raiseEquip = false): void {
     // Keep the equipment button usable while the menu is open.
     for (const btn of this.buttons) {
       if (btn.key === 'equip') continue;
@@ -72,6 +72,8 @@ export class TouchControls {
       btn.label.setVisible(!paused);
       if (paused) this.gameInput.touch[btn.key] = false;
     }
+    // Raise the whole pad (only 裝 stays visible) above the equipment dimmer.
+    this.root.setDepth(raiseEquip ? 2000 : 800);
   }
 
   setVisible(visible: boolean): void {

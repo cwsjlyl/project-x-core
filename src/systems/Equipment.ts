@@ -166,10 +166,10 @@ export const STARTER_IDS = [
 ] as const;
 
 export interface Loadout {
-  helmet: string;
-  body: string;
-  arms: string;
-  legs: string;
+  helmet: string | null;
+  body: string | null;
+  arms: string | null;
+  legs: string | null;
   chip1: string | null;
   chip2: string | null;
 }
@@ -177,16 +177,24 @@ export interface Loadout {
 export class EquipmentSystem {
   readonly owned = new Set<string>();
   loadout: Loadout = {
-    helmet: 'helm_starter',
-    body: 'body_starter',
-    arms: 'arms_starter',
-    legs: 'legs_starter',
+    helmet: null,
+    body: null,
+    arms: null,
+    legs: null,
     chip1: null,
     chip2: null
   };
 
   constructor() {
-    for (const id of STARTER_IDS) this.owned.add(id);
+    /* Start with no devices owned or equipped. Starter pieces are world pickups. */
+  }
+
+  hasArms(): boolean {
+    return !!this.loadout.arms;
+  }
+
+  hasLegs(): boolean {
+    return !!this.loadout.legs;
   }
 
   grant(id: string): boolean {
@@ -238,6 +246,10 @@ export class EquipmentSystem {
   }
 
   unequipChip(slot: 'chip1' | 'chip2'): void {
+    this.unequip(slot);
+  }
+
+  unequip(slot: EquipSlot): void {
     this.loadout[slot] = null;
   }
 

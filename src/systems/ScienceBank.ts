@@ -555,12 +555,22 @@ export function speakTerm(term: string): void {
   }
 }
 
+export const STATION_ATTEMPT_LIMIT = 2;
+
 export class ScienceProgress {
   score = 0;
   readonly clearedTopics = new Set<TopicId>();
   readonly answeredIds = new Set<string>();
-  /** Correct answers counted toward clearing each station (needs 2). */
+  /** Correct answers at each station (points only). */
   readonly topicCorrects: Record<TopicId, number> = {
+    sound: 0,
+    force: 0,
+    magnet: 0,
+    materials: 0,
+    weather: 0
+  };
+  /** Answered attempts per station topic (correct + incorrect). Cap is 2. */
+  readonly topicAttempts: Record<TopicId, number> = {
     sound: 0,
     force: 0,
     magnet: 0,
@@ -588,19 +598,58 @@ export class ScienceProgress {
     return this.topicCorrects[topic] ?? 0;
   }
 
+  attemptCount(topic: TopicId): number {
+    return this.topicAttempts[topic] ?? 0;
+  }
+
+  remainingAttempts(topic: TopicId): number {
+    return Math.max(0, STATION_ATTEMPT_LIMIT - this.attemptCount(topic));
+  }
+
+  canAsk(topic: TopicId): boolean {
+    return this.attemptCount(topic) < STATION_ATTEMPT_LIMIT && !this.clearedTopics.has(topic);
+  }
+
+  private bumpAttempt(topic: TopicId): { attempts: number; justCleared: boolean } {
+    const next = Math.min(STATION_ATTEMPT_LIMIT, this.attemptCount(topic) + 1);
+    this.topicAttempts[topic] = next;
+    const justCleared = next >= STATION_ATTEMPT_LIMIT && !this.clearedTopics.has(topic);
+    if (next >= STATION_ATTEMPT_LIMIT) this.clearedTopics.add(topic);
+    return { attempts: next, justCleared };
+  }
+
+  /** Count a wrong (or otherwise completed) station answer. Does not award points. */
+  markAttempt(question: ScienceQuestion): {
+    justCleared: boolean;
+    attempts: number;
+    remaining: number;
+  } {
+    this.answeredIds.add(question.id);
+    const { attempts, justCleared } = this.bumpAttempt(question.topic);
+    return { justCleared, attempts, remaining: Math.max(0, STATION_ATTEMPT_LIMIT - attempts) };
+  }
+
   markCorrect(question: ScienceQuestion, points = 10): {
     justCleared: boolean;
     firstClear: boolean;
     correctCount: number;
     points: number;
+    attempts: number;
+    remaining: number;
   } {
     this.answeredIds.add(question.id);
     this.score += points;
     const prev = this.topicCorrects[question.topic] ?? 0;
     const next = prev + 1;
     this.topicCorrects[question.topic] = next;
-    const justCleared = next >= 2 && !this.clearedTopics.has(question.topic);
-    if (next >= 2) this.clearedTopics.add(question.topic);
-    return { justCleared, firstClear: justCleared, correctCount: next, points };
+    const { attempts, justCleared } = this.bumpAttempt(question.topic);
+    return {
+      justCleared,
+      firstClear: justCleared,
+      correctCount: next,
+      points,
+      attempts,
+      remaining: Math.max(0, STATION_ATTEMPT_LIMIT - attempts)
+    };
   }
 }
