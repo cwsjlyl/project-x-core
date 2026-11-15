@@ -48,12 +48,19 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
     private readonly arena: ArenaBounds,
     private readonly spawnShot: (req: BossShotRequest) => void
   ) {
-    super(scene, x, y, 'boss_tex');
+    const key = scene.textures.exists('boss') ? 'boss' : 'boss_tex';
+    super(scene, x, y, key);
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setCollideWorldBounds(true);
-    this.setSize(48, 40);
-    this.setOffset(8, 8);
+    if (key === 'boss') {
+      // 80×64 beach-crab sprite; body sits on the feet.
+      this.setSize(56, 44);
+      this.setOffset(12, 20);
+    } else {
+      this.setSize(48, 40);
+      this.setOffset(8, 8);
+    }
     this.setDepth(10);
     this.setBounce(0);
   }

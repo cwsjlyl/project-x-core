@@ -201,13 +201,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (input.jumpPressed) {
       if (onGround) {
-        body.setVelocityY(-340);
+        body.setVelocityY(-400);
       } else if (onWallLeft || onWallRight) {
         const kickDir: 1 | -1 = onWallLeft ? 1 : -1;
         this.facing = kickDir;
         this.setFlipX(kickDir === -1);
         const kickSpeedX = input.dashHeld ? 260 : 185;
-        body.setVelocity(kickDir * kickSpeedX, -320);
+        body.setVelocity(kickDir * kickSpeedX, -380);
         this.wallKickLockTimer = 140;
         this.isDashing = false;
       }
