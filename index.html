@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Project X-Core | 蒼藍核心</title>
   <link rel="preload" as="font" type="font/woff2" href="./fonts/fusion-pixel-12px-proportional-latin.otf.woff2" crossorigin />
   <link rel="preload" as="font" type="font/woff2" href="./fonts/fusion-pixel-12px-proportional-zh_hk.otf.woff2" crossorigin />
@@ -28,12 +28,22 @@
       background: #5ec8ee;
       width: 100%;
       height: 100%;
+      height: 100dvh;
+      min-height: 100%;
+      min-height: -webkit-fill-available;
       overflow: hidden;
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      overscroll-behavior: none;
     }
-    body { display: flex; justify-content: center; align-items: center; font-family: "Fusion Pixel", sans-serif; }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: "Fusion Pixel", sans-serif;
+    }
     #game-container { width: 100%; height: 100%; }
     canvas { image-rendering: pixelated; image-rendering: crisp-edges; box-shadow: 0 0 32px rgba(40, 140, 200, 0.28); }
     .font-warmup {
@@ -45,11 +55,148 @@
       pointer-events: none;
       visibility: hidden;
     }
+
+    /* Full-window touch overlay: uses letterbox + safe-area, not the FIT-scaled canvas. */
+    #touch-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      display: none;
+      font-family: "Fusion Pixel", sans-serif;
+    }
+    #touch-overlay.is-on { display: block; }
+    #touch-overlay.menus-open .touch-play { opacity: 0; pointer-events: none; }
+
+    .touch-btn {
+      appearance: none;
+      border: 2px solid rgba(230, 236, 240, 0.45);
+      background: rgba(16, 28, 40, 0.42);
+      color: #f4eee4;
+      font-family: "Fusion Pixel", sans-serif;
+      font-size: 18px;
+      line-height: 1;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+      user-select: none;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    .touch-btn.is-down {
+      background: rgba(40, 90, 120, 0.72);
+      transform: scale(0.94);
+    }
+    .touch-btn-sm {
+      width: 52px;
+      height: 52px;
+      font-size: 16px;
+      background: rgba(28, 64, 80, 0.48);
+    }
+    .touch-hud-right {
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 0px) + 8px);
+      right: calc(env(safe-area-inset-right, 0px) + 8px);
+      display: flex;
+      gap: 8px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .touch-hud-right .touch-btn { pointer-events: auto; }
+
+    .touch-play { pointer-events: none; }
+    #touch-stick-area {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 44%;
+      height: 72%;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    #touch-stick {
+      position: absolute;
+      width: 128px;
+      height: 128px;
+      left: calc(env(safe-area-inset-left, 0px) + 16px);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+      pointer-events: none;
+    }
+    .stick-base {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: rgba(16, 28, 40, 0.28);
+      border: 2px solid rgba(230, 236, 240, 0.35);
+      box-shadow: inset 0 0 0 10px rgba(255, 255, 255, 0.04);
+    }
+    .stick-knob {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      left: 32px;
+      top: 32px;
+      border-radius: 50%;
+      background: rgba(40, 90, 120, 0.72);
+      border: 2px solid rgba(230, 236, 240, 0.7);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    .touch-actions {
+      position: absolute;
+      right: calc(env(safe-area-inset-right, 0px) + 12px);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+      width: 200px;
+      height: 168px;
+      pointer-events: none;
+    }
+    .touch-actions .touch-btn {
+      position: absolute;
+      width: 72px;
+      height: 72px;
+      font-size: 20px;
+    }
+    #touch-jump { right: 76px; top: 0; }
+    #touch-shoot { right: 0; top: 52px; }
+    #touch-dash { right: 88px; top: 90px; width: 64px; height: 64px; font-size: 18px; }
+
+    @media (min-width: 900px) {
+      .touch-btn-sm { width: 56px; height: 56px; }
+      #touch-stick { width: 148px; height: 148px; }
+      .stick-knob { width: 72px; height: 72px; left: 38px; top: 38px; }
+      .touch-actions { width: 230px; height: 190px; }
+      .touch-actions .touch-btn { width: 84px; height: 84px; font-size: 22px; }
+      #touch-jump { right: 90px; top: 0; }
+      #touch-shoot { right: 0; top: 58px; }
+      #touch-dash { right: 102px; top: 104px; width: 72px; height: 72px; }
+    }
   </style>
 </head>
 <body>
-  <div class="font-warmup" aria-hidden="true">Project X-Core 蒼藍核心 學習站 科學分 聲動齊心合力</div>
+  <div class="font-warmup" aria-hidden="true">Project X-Core 蒼藍核心 學習站 科學分 聲動齊心合力 要完成全部學習站才可挑戰首領 已關閉 防護膜 尖刺 擴散</div>
   <div id="game-container"></div>
+  <div id="touch-overlay" aria-hidden="true">
+    <div class="touch-hud-right">
+      <button type="button" class="touch-btn touch-btn-sm" id="touch-mute">音</button>
+      <button type="button" class="touch-btn touch-btn-sm" id="touch-equip">裝</button>
+    </div>
+    <div class="touch-play">
+      <div id="touch-stick-area">
+        <div id="touch-stick">
+          <div class="stick-base"></div>
+          <div class="stick-knob" id="touch-knob"></div>
+        </div>
+      </div>
+      <div class="touch-actions">
+        <button type="button" class="touch-btn" id="touch-jump">跳</button>
+        <button type="button" class="touch-btn" id="touch-shoot">射</button>
+        <button type="button" class="touch-btn" id="touch-dash">衝</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
