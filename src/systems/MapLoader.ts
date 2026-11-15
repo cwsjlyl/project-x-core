@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { EnemyKind } from './Stages';
 
 export interface SpawnPoint {
   x: number;
@@ -8,6 +9,7 @@ export interface SpawnPoint {
 export interface EnemySpawn extends SpawnPoint {
   patrolMin: number;
   patrolMax: number;
+  kind?: EnemyKind;
 }
 
 export interface PickupSpawn extends SpawnPoint {
@@ -71,9 +73,9 @@ function rectOf(obj: Phaser.Types.Tilemaps.TiledObject): RectZone {
   };
 }
 
-export function loadStage(scene: Phaser.Scene, useLights: boolean): StageData {
-  const map = scene.make.tilemap({ key: 'stage1' });
-  const tileset = map.addTilesetImage('industrial', 'industrial');
+export function loadStage(scene: Phaser.Scene, useLights: boolean, mapKey = 'stage1', tilesetKey = 'industrial'): StageData {
+  const map = scene.make.tilemap({ key: mapKey });
+  const tileset = map.addTilesetImage('industrial', tilesetKey);
   if (!tileset) {
     throw new Error('未能載入 industrial tileset');
   }
@@ -116,11 +118,13 @@ export function loadStage(scene: Phaser.Scene, useLights: boolean): StageData {
       if (type === 'spawn' || obj.name === 'player') {
         playerSpawn = c;
       } else if (type === 'enemy' || obj.name.startsWith('patrol')) {
+        const kindRaw = String(p.kind ?? '').trim();
         enemies.push({
           x: c.x,
           y: c.y,
           patrolMin: Number(p.patrolMin ?? c.x - 80),
-          patrolMax: Number(p.patrolMax ?? c.x + 80)
+          patrolMax: Number(p.patrolMax ?? c.x + 80),
+          kind: (kindRaw || undefined) as EnemyKind | undefined
         });
       } else if (type === 'pickup' || obj.name.startsWith('pickup')) {
         const itemId = String(p.itemId ?? obj.name.replace(/^pickup_/, ''));

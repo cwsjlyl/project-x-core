@@ -17,6 +17,7 @@ interface ChoiceBtn {
 export class ScienceUI {
   private readonly root: Phaser.GameObjects.Container;
   private readonly titleText: UiText;
+  private readonly closeLabel: UiText;
   private readonly promptText: UiText;
   private readonly feedbackText: UiText;
   private readonly continueBtn: Phaser.GameObjects.Rectangle;
@@ -26,6 +27,9 @@ export class ScienceUI {
   private topic: TopicId | null = null;
   private question: ScienceQuestion | null = null;
   private locked = false;
+  private bossMode = false;
+  private onBossResolved: ((correct: boolean) => void) | null = null;
+  private resolved: boolean | null = null;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -43,14 +47,14 @@ export class ScienceUI {
       .setStrokeStyle(1, 0x3ecfff)
       .setScrollFactor(0);
 
-    this.titleText = addUiText(scene, 240, 16, '學習站', {
+    this.titleText = addUiText(scene, 240, 12, '學習站', {
       size: 24,
       color: '#7ef0ff',
       originX: 0.5,
       originY: 0
     }).setScrollFactor(0);
 
-    const close = addUiText(scene, 448, 16, '關閉', {
+    this.closeLabel = addUiText(scene, 448, 14, '關閉', {
       size: 12,
       color: '#c9f6ff',
       originX: 1,
@@ -58,18 +62,18 @@ export class ScienceUI {
     })
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
-    close.on('pointerdown', () => this.hide());
+    this.closeLabel.on('pointerdown', () => this.hide());
 
-    this.promptText = addUiText(scene, 32, 46, '', {
+    this.promptText = addUiText(scene, 32, 42, '', {
       size: 12,
       color: '#e8fbff',
       wordWrap: 416
     }).setScrollFactor(0);
 
     for (let i = 0; i < 3; i++) {
-      const y = 108 + i * 36;
+      const y = 96 + i * 30;
       const box = scene.add
-        .rectangle(240, y, 400, 30, 0x182233, 1)
+        .rectangle(240, y, 400, 26, 0x182233, 1)
         .setStrokeStyle(1, 0x3a6a7c)
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true });
@@ -87,7 +91,7 @@ export class ScienceUI {
       this.choices.push({ box, label });
     }
 
-    this.feedbackText = addUiText(scene, 240, 216, '', {
+    this.feedbackText = addUiText(scene, 240, 188, '', {
       size: 12,
       color: '#b8e6ee',
       originX: 0.5,
@@ -97,7 +101,7 @@ export class ScienceUI {
     }).setScrollFactor(0);
 
     this.continueBtn = scene.add
-      .rectangle(240, 248, 160, 22, 0x155a66, 1)
+      .rectangle(240, 248, 160, 20, 0x155a66, 1)
       .setStrokeStyle(1, 0x5ce8ff)
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true })
@@ -119,7 +123,7 @@ export class ScienceUI {
       dim,
       panel,
       this.titleText,
-      close,
+      this.closeLabel,
       this.promptText,
       this.feedbackText,
       this.continueBtn,
@@ -134,13 +138,42 @@ export class ScienceUI {
 
   show(topic: TopicId): void {
     this.topic = topic;
+    this.bossMode = false;
+    this.onBossResolved = null;
+    this.resolved = null;
     this.open = true;
     this.locked = false;
+    this.closeLabel.setVisible(true);
     this.root.setVisible(true);
-    this.scene.physics.world.pause();
-    this.scene.time.paused = true;
-    this.scene.tweens.pauseAll();
+    this.pauseWorld();
     this.loadQuestion();
+  }
+
+  /** Boss quarter-HP quiz. Physics stay paused until the player continues. */
+  showBossQuestion(question: ScienceQuestion, onResolved: (correct: boolean) => void): void {
+    this.topic = question.topic;
+    this.bossMode = true;
+    this.onBossResolved = onResolved;
+    this.resolved = null;
+    this.open = true;
+    this.locked = false;
+    this.question = question;
+    this.closeLabel.setVisible(false);
+    this.root.setVisible(true);
+    this.pauseWorld();
+    this.titleText.setText('首領科學題');
+    this.promptText.setText(question.prompt);
+    this.placeFeedback(188);
+    this.feedbackText.setColor('#b8e6ee');
+    this.feedbackText.setText('答對會電擊首領，答錯主角會被電擊。');
+    this.setContinueVisible(false);
+    this.showChoices(question);
+  }
+
+  /** Local preview: open a station and lock in the correct answer immediately. */
+  previewCorrect(topic: TopicId = 'sound'): void {
+    this.show(topic);
+    if (this.question) this.onChoice(this.question.answer);
   }
 
   hide(): void {
@@ -150,14 +183,32 @@ export class ScienceUI {
     this.question = null;
     this.locked = false;
     this.root.setVisible(false);
-    this.scene.physics.world.resume();
-    this.scene.time.paused = false;
-    this.scene.tweens.resumeAll();
+    this.resumeWorld();
+    const bossCb = this.onBossResolved;
+    const resolved = this.resolved;
+    this.onBossResolved = null;
+    this.bossMode = false;
+    this.resolved = null;
     this.onClosed();
+    // Closing mid-quiz must not soft-lock the fight: treat as "no extra stun" if unanswered.
+    if (bossCb && resolved !== null) bossCb(resolved);
+    else if (bossCb) bossCb(false);
   }
 
   destroy(): void {
     this.root.destroy(true);
+  }
+
+  private pauseWorld(): void {
+    this.scene.physics.world.pause();
+    this.scene.time.paused = true;
+    this.scene.tweens.pauseAll();
+  }
+
+  private resumeWorld(): void {
+    this.scene.physics.world.resume();
+    this.scene.time.paused = false;
+    this.scene.tweens.resumeAll();
   }
 
   private loadQuestion(): void {
@@ -166,10 +217,18 @@ export class ScienceUI {
     this.titleText.setText(info.stationLabel);
     this.question = pickQuestion(this.topic, this.progress.answeredIds);
     this.promptText.setText(this.question.prompt);
+    this.placeFeedback(188);
     this.feedbackText.setText('揀一個你認為合適嘅答案。答錯都可以再試。');
     this.feedbackText.setColor('#b8e6ee');
     this.setContinueVisible(false);
-    this.question.choices.forEach((choice, i) => {
+    this.showChoices(this.question);
+  }
+
+  private showChoices(question: ScienceQuestion): void {
+    question.choices.forEach((choice, i) => {
+      const y = 96 + i * 30;
+      this.choices[i].box.setPosition(240, y);
+      this.choices[i].label.setPosition(240, y);
       this.choices[i].label.setText(choice);
       this.choices[i].box.setFillStyle(0x182233, 1);
       this.choices[i].box.setStrokeStyle(1, 0x3a6a7c);
@@ -178,31 +237,65 @@ export class ScienceUI {
     });
   }
 
+  private hideChoices(): void {
+    this.choices.forEach((c) => {
+      c.box.setVisible(false);
+      c.label.setVisible(false);
+    });
+  }
+
+  private placeFeedback(y: number): void {
+    this.feedbackText.setY(y);
+  }
+
+  private layoutAfterAnswer(): void {
+    // Explanation occupies the space left by hidden choices. Continue sits below it.
+    const explainTop = 86;
+    this.placeFeedback(explainTop);
+    const textH = Math.max(16, this.feedbackText.fill.height);
+    const btnY = Math.min(252, Math.max(explainTop + textH + 16, 230));
+    this.continueBtn.setY(btnY);
+    this.continueLabel.setY(btnY);
+  }
+
   private onChoice(index: number): void {
     if (!this.open || this.locked || !this.question) return;
     const q = this.question;
     if (index === q.answer) {
       this.locked = true;
-      this.choices.forEach((c, i) => {
-        if (i === index) {
-          c.box.setFillStyle(0x155a66, 1);
-          c.box.setStrokeStyle(1, 0x5ce8ff);
-        }
-      });
-      const { firstClear, points } = this.progress.markCorrect(q);
-      const extra = firstClear
-        ? `科學分 +${points}！呢個學習站完成喇。`
-        : `科學分 +${points}！`;
+      this.hideChoices();
+      this.resolved = true;
+      let extra = '';
+      if (!this.bossMode) {
+        const { justCleared, correctCount, points } = this.progress.markCorrect(q);
+        if (justCleared) extra = `科學分 +${points}！呢個學習站完成啦。`;
+        else if (correctCount === 1) extra = `科學分 +${points}！再答對一題就完成呢個學習站。`;
+        else extra = `科學分 +${points}！`;
+        this.onChanged();
+      } else {
+        extra = '答對喇！電擊會令首領暫停。';
+      }
       this.feedbackText.setColor('#8ffff4');
       this.feedbackText.setText(`${q.explain} ${extra}`);
       speakTerm(q.speak);
+      this.continueLabel.setText(this.bossMode ? '繼續戰鬥' : '繼續探索');
       this.setContinueVisible(true);
-      this.onChanged();
+      this.layoutAfterAnswer();
     } else {
       this.choices[index].box.setFillStyle(0x3a2230, 1);
       this.choices[index].box.setStrokeStyle(1, 0xc07080);
       this.feedbackText.setColor('#ffe8a0');
+      this.placeFeedback(188);
       this.feedbackText.setText(`再諗諗：${q.hint}`);
+      if (this.bossMode) {
+        this.locked = true;
+        this.resolved = false;
+        this.hideChoices();
+        this.feedbackText.setText(`答錯喇！${q.hint}　主角會被電擊暫停。`);
+        this.continueLabel.setText('繼續戰鬥');
+        this.setContinueVisible(true);
+        this.layoutAfterAnswer();
+      }
     }
   }
 

@@ -100,6 +100,27 @@ export const ITEM_CATALOG: Record<string, EquipItem> = {
     description: '每次跳躍可進行一次空中衝刺。',
     effects: { canAirDash: true }
   },
+  body_leaf: {
+    id: 'body_leaf',
+    name: '翠葉胸甲',
+    kind: 'body',
+    description: '擊敗翠葉巨梟後獲得。生命上限 +16，受傷減少約 10%。',
+    effects: { maxHpBonus: 16, damageReduction: 0.1 }
+  },
+  arms_frost: {
+    id: 'arms_frost',
+    name: '霜牙手臂',
+    kind: 'arms',
+    description: '擊敗霜原巨熊後獲得。攻擊 +5，蓄力稍快。',
+    effects: { atkBonus: 5, chargeSpeed: 1.15 }
+  },
+  legs_sand: {
+    id: 'legs_sand',
+    name: '炎砂腿甲',
+    kind: 'legs',
+    description: '擊敗炎砂巨蜥後獲得。可空中衝刺，生命上限 +10。',
+    effects: { canAirDash: true, maxHpBonus: 10 }
+  },
   chip_charge: {
     id: 'chip_charge',
     name: '迅充晶片',
@@ -258,16 +279,18 @@ export class EquipmentSystem {
       if (e.doubleShot) doubleShot = true;
     }
 
+    const num = (v: number, fallback = 0): number =>
+      Number.isFinite(v) ? v : fallback;
     return {
-      maxHpBonus,
-      atkBonus,
-      lightRadius,
-      damageReduction: Math.min(0.6, damageReduction),
-      chargeSpeed,
+      maxHpBonus: num(maxHpBonus),
+      atkBonus: num(atkBonus),
+      lightRadius: num(lightRadius, 110),
+      damageReduction: Math.min(0.6, num(damageReduction)),
+      chargeSpeed: num(chargeSpeed, 1) || 1,
       canAirDash,
-      regenPerSecond,
-      bossDamageBonus,
-      invulnMs,
+      regenPerSecond: num(regenPerSecond),
+      bossDamageBonus: num(bossDamageBonus, 0),
+      invulnMs: num(invulnMs, 800) || 800,
       doubleShot
     };
   }
