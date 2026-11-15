@@ -12,6 +12,8 @@ export interface ShotPayload {
   chargeLevel: 1 | 2 | 3;
   damage: number;
   unarmed?: boolean;
+  vy?: number;
+  bulletScale?: number;
 }
 
 const DISPLAY_W = 36;
@@ -43,6 +45,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private shootPoseTimer = 0;
   private stunTimer = 0;
   private aura: Phaser.GameObjects.Image | null = null;
+  private shieldFx: Phaser.GameObjects.Image | null = null;
+  private shieldCd = 0;
+  private shieldLeft = 0;
   private stats: DerivedStats;
   private readonly usesSheet: boolean;
 
@@ -185,7 +190,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.invulnTimer > 0) {
       this.invulnTimer -= delta;
-      this.setAlpha(Math.floor(this.invulnTimer / 60) % 2 === 0 ? 0.4 : 1);
+      if (this.shieldVisible) this.setAlpha(1);
+      else this.setAlpha(Math.floor(this.invulnTimer / 60) % 2 === 0 ? 0.4 : 1);
     } else {
       this.setAlpha(1);
     }
@@ -253,15 +259,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (input.jumpPressed) {
+      const boost = Math.min(80, Math.max(0, this.stats.jumpBoost || 0));
       if (onGround) {
-        body.setVelocityY(-400);
+        body.setVelocityY(-400 - boost);
         gameAudio.play('jump');
       } else if (onWallLeft || onWallRight) {
         const kickDir: 1 | -1 = onWallLeft ? 1 : -1;
         this.facing = kickDir;
         this.setFlipX(kickDir === -1);
         const kickSpeedX = input.dashHeld ? 260 : 185;
-        body.setVelocity(kickDir * kickSpeedX, -380);
+        body.setVelocity(kickDir * kickSpeedX, -380 - Math.round(boost * 0.7));
         this.wallKickLockTimer = 140;
         this.isDashing = false;
         gameAudio.play('jump');
@@ -284,6 +291,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.shootPoseTimer > 0) {
       this.shootPoseTimer -= delta;
     }
+
+    this.updateShield(delta);
 
     this.updateAnimation(onGround, wallSliding, body.velocity.x);
   }
@@ -322,16 +331,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       dir: this.facing,
       chargeLevel,
       damage,
-      unarmed
+      unarmed,
+      bulletScale: this.stats.bulletScale
     };
-    this.onFireCallback(payload);
+    const fire = (shot: ShotPayload) => this.onFireCallback(shot);
+    fire(payload);
+    if (this.stats.spreadShot) {
+      fire({ ...payload, vy: -0.34 });
+      fire({ ...payload, vy: 0.34 });
+    }
     gameAudio.play(chargeLevel >= 3 ? 'shoot3' : 'shoot');
     if (this.stats.doubleShot) {
-      this.onFireCallback({
-        ...payload,
-        y: payload.y + 8,
-        x: payload.x + this.facing * 2
-      });
+      const extra = { ...payload, y: payload.y + 8, x: payload.x + this.facing * 2 };
+      fire(extra);
+      if (this.stats.spreadShot) {
+        fire({ ...extra, vy: -0.34 });
+        fire({ ...extra, vy: 0.34 });
+      }
     }
     this.chargeTime = 0;
     this.shootPoseTimer = 180;
@@ -385,25 +401,81 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setupBody();
   }
 
+  get shieldVisible(): boolean {
+    return this.shieldLeft > 0 && !this.dead;
+  }
+
+  /** Local preview: show the pulse shield without the hurt flicker. */
+  previewShield(ms = 1400): void {
+    this.invulnTimer = 0;
+    this.setAlpha(1);
+    this.shieldLeft = ms;
+    this.shieldCd = 0;
+    this.syncShieldFx();
+  }
+
+
+  private updateShield(delta: number): void {
+    const period = this.stats.shieldPeriod;
+    const duration = this.stats.shieldDuration;
+    if (period <= 0 || duration <= 0 || this.dead) {
+      this.shieldLeft = 0;
+      this.syncShieldFx();
+      return;
+    }
+    if (this.shieldLeft > 0) {
+      this.shieldLeft -= delta;
+      if (this.shieldLeft < 0) this.shieldLeft = 0;
+    } else {
+      this.shieldCd += delta;
+      if (this.shieldCd >= period) {
+        this.shieldCd = 0;
+        this.shieldLeft = duration;
+        this.invulnTimer = Math.max(this.invulnTimer, duration);
+      }
+    }
+    this.syncShieldFx();
+  }
+
   private syncAura(): void {
     if (!this.aura) {
       const key = this.scene.textures.exists('aura_tex') ? 'aura_tex' : '';
       if (!key) return;
       this.aura = this.scene.add.image(this.x, this.y, key).setDepth(9);
+      this.aura.setBlendMode(Phaser.BlendModes.ADD);
     }
     const tint = chipAuraTint(this.equipment);
-    this.aura.setPosition(this.x, this.y + 6);
+    this.aura.setPosition(this.x, this.y - 2);
     this.aura.setVisible(!!tint && this.visible && !this.dead);
     if (tint) this.aura.setTint(tint);
-    this.aura.setAlpha(this.alpha * 0.55);
-    this.aura.setScale(1.2);
+    this.aura.setAlpha(this.alpha * 0.7);
+    this.aura.setScale(1.05);
+  }
+
+  private syncShieldFx(): void {
+    if (!this.shieldFx) {
+      const key = this.scene.textures.exists('shield_tex') ? 'shield_tex' : '';
+      if (!key) return;
+      this.shieldFx = this.scene.add.image(this.x, this.y, key).setDepth(12);
+      this.shieldFx.setBlendMode(Phaser.BlendModes.ADD);
+    }
+    const on = this.shieldVisible;
+    this.shieldFx.setVisible(on);
+    if (!on) return;
+    this.shieldFx.setPosition(this.x, this.y);
+    const pulse = 0.55 + 0.25 * Math.sin(this.scene.time.now / 90);
+    this.shieldFx.setAlpha(pulse);
+    this.shieldFx.setScale(1.05 + 0.06 * Math.sin(this.scene.time.now / 70));
   }
 
   preUpdate(time: number, delta: number): void {
     super.preUpdate(time, delta);
     if (this.aura) {
-      this.aura.setPosition(this.x, this.y + 6);
-      this.aura.setAlpha(this.alpha * 0.55);
+      this.aura.setPosition(this.x, this.y - 2);
+      this.aura.setAlpha(this.alpha * 0.7);
+    }
+    if (this.shieldFx && this.shieldFx.visible) {
+      this.shieldFx.setPosition(this.x, this.y);
     }
   }
 }
