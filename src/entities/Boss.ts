@@ -133,9 +133,16 @@ export class StageBoss extends Phaser.Physics.Arcade.Sprite {
     if (!this.fightStarted || this.defeated || this.invuln > 0) return false;
     if (!isPositiveDamage(amount)) return false;
     this.hp = Math.max(0, this.hp - Math.round(amount));
-    this.setTintFill(0xffffff);
-    this.scene.time.delayedCall(50, () => {
-      if (!this.active) return;
+    this.invuln = Math.max(this.invuln, 150);
+    this.stayPresent();
+    // Use tint, not tintFill, and never deactivate the sprite on a hit flash.
+    this.setTint(0xffffff);
+    this.scene.time.delayedCall(80, () => {
+      this.stayPresent();
+      if (this.defeated) {
+        this.setTint(0x667788);
+        return;
+      }
       this.clearTint();
       this.applyPhaseTint();
     });
@@ -148,7 +155,9 @@ export class StageBoss extends Phaser.Physics.Arcade.Sprite {
   }
 
   updateBoss(delta: number, player: Player): void {
-    if (!this.fightStarted || !this.active) return;
+    if (!this.fightStarted) return;
+    this.stayPresent();
+    if (!this.active) return;
     if (this.invuln > 0) this.invuln -= delta;
     if (this.stunTimer > 0) {
       this.stunTimer -= delta;
@@ -432,10 +441,48 @@ export class StageBoss extends Phaser.Physics.Arcade.Sprite {
     this.setVelocity(0, 0);
     this.clearTint();
     this.setTint(0x667788);
+    this.setAlpha(1);
+    this.setActive(true);
+    this.setVisible(true);
     this.enter('dead', 999999, 'dead');
     if (this.aura) {
       this.aura.destroy();
       this.aura = null;
+    }
+  }
+
+  /**
+   * Keep the boss drawn and physically present.
+   * A stray pool recycle or off-arena fall must never hide it mid-fight,
+   * or the door stays locked and the stage cannot be cleared.
+   */
+  stayPresent(): void {
+    const midX = this.arena.x + this.arena.width / 2;
+    const floor = this.arena.y + this.arena.height - 28;
+    if (!Number.isFinite(this.x) || !Number.isFinite(this.y)) {
+      this.setPosition(midX, floor);
+    }
+    const left = this.arena.x + 40;
+    const right = this.arena.x + this.arena.width - 40;
+    if (this.y > floor + 40 || this.y < this.arena.y - 40) {
+      this.y = Phaser.Math.Clamp(this.y, this.arena.y + 40, floor);
+      this.setVelocityY(0);
+    }
+    if (this.x < left || this.x > right) {
+      this.x = Phaser.Math.Clamp(this.x, left, right);
+      this.setVelocityX(0);
+    }
+    this.setActive(true);
+    this.setVisible(true);
+    if (this.defeated) {
+      this.setAlpha(1);
+      this.setTint(0x667788);
+    } else if (this.alpha < 0.35) {
+      this.setAlpha(1);
+    }
+    const body = this.body as Phaser.Physics.Arcade.Body | undefined;
+    if (body && !body.enable) {
+      this.enableBody(true, this.x, this.y, true, true);
     }
   }
 

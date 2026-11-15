@@ -3,6 +3,7 @@ import type { GameInput } from '../systems/GameInput';
 import type { DerivedStats, EquipmentSystem } from '../systems/Equipment';
 import { bakeHeroLook, chipAuraTint, LOOK_KEY } from '../systems/HeroLook';
 import { finiteNumber, isPositiveDamage } from '../systems/CombatMath';
+import { gameAudio } from '../systems/Audio';
 
 export interface ShotPayload {
   x: number;
@@ -212,6 +213,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
       if (onWallLeft) this.facing = 1;
       if (onWallRight) this.facing = -1;
+      gameAudio.play('dash');
     }
 
     if (this.isDashing) {
@@ -253,6 +255,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (input.jumpPressed) {
       if (onGround) {
         body.setVelocityY(-400);
+        gameAudio.play('jump');
       } else if (onWallLeft || onWallRight) {
         const kickDir: 1 | -1 = onWallLeft ? 1 : -1;
         this.facing = kickDir;
@@ -261,6 +264,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         body.setVelocity(kickDir * kickSpeedX, -380);
         this.wallKickLockTimer = 140;
         this.isDashing = false;
+        gameAudio.play('jump');
       }
     }
 
@@ -321,6 +325,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       unarmed
     };
     this.onFireCallback(payload);
+    gameAudio.play(chargeLevel >= 3 ? 'shoot3' : 'shoot');
     if (this.stats.doubleShot) {
       this.onFireCallback({
         ...payload,
@@ -359,6 +364,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dead = true;
       this.setVelocity(0, 0);
       this.setAlpha(0.4);
+      gameAudio.play('die');
+    } else {
+      gameAudio.play('hurt');
     }
   }
 
