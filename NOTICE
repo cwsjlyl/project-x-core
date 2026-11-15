@@ -46,3 +46,10 @@ Project X-Core / 蒼藍核心 — 授權聲明
    官方 Fusion Pixel 提供 8／10／12px，並無 16px 版本；正文用 12px，標題用整數 2 倍（24px），
    以免非整數縮放令像素字發糊。點陣圖集係該字型嘅衍生作品，保留 SIL OFL 1.1，
    並冇使用保留字型名稱作為衍生字型產品名。
+
+6. 音效（public/assets/sfx/）
+   短促 8-bit 風格效果音（跳躍、射擊、擊中、受傷、拾取、首領、答題、介面）
+   由本專案以程式合成，沒有使用第三方錄音或官方遊戲音樂。
+   授權：Creative Commons Zero (CC0 1.0)
+   https://creativecommons.org/publicdomain/zero/1.0/
+   說明見 public/assets/sfx/README.txt。畫面右上「音／靜」掣或按 M 可靜音。
