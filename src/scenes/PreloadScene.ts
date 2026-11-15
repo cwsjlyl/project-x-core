@@ -414,14 +414,6 @@ export class PreloadScene extends Phaser.Scene {
     g.generateTexture('station_tex', 18, 24);
     g.clear();
 
-    // Chip aura (soft pixel ring)
-    g.fillStyle(0x66ffff, 0.35);
-    g.fillCircle(10, 10, 10);
-    g.fillStyle(0xffffff, 0.5);
-    g.fillCircle(10, 10, 4);
-    g.generateTexture('aura_tex', 20, 20);
-    g.clear();
-
     // Small-enemy projectiles
     g.fillStyle(0xe8c070);
     g.fillCircle(5, 5, 5);
@@ -429,5 +421,120 @@ export class PreloadScene extends Phaser.Scene {
     g.fillCircle(5, 5, 2);
     g.generateTexture('enemy_shot_tex', 10, 10);
     g.destroy();
+
+    this.bakeTransparentTextures();
+  }
+
+  /** Canvas textures with a real alpha channel (Graphics.generateTexture often leaves a black square). */
+  private bakeTransparentTextures(): void {
+    const canvas = (key: string, w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void) => {
+      if (this.textures.exists(key)) this.textures.remove(key);
+      const tex = this.textures.createCanvas(key, w, h);
+      if (!tex) return;
+      const ctx = tex.getContext();
+      ctx.clearRect(0, 0, w, h);
+      ctx.imageSmoothingEnabled = false;
+      draw(ctx);
+      tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      tex.refresh();
+    };
+
+    canvas('aura_tex', 32, 32, (ctx) => {
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = '#88fff8';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(16, 16, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.arc(16, 16, 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      // a few spark dots, no filled disc (avoids a solid block when tinted)
+      ctx.fillStyle = 'rgba(200, 255, 255, 0.7)';
+      ctx.fillRect(16, 3, 1, 2);
+      ctx.fillRect(16, 27, 1, 2);
+      ctx.fillRect(3, 16, 2, 1);
+      ctx.fillRect(27, 16, 2, 1);
+    });
+
+    canvas('shield_tex', 48, 48, (ctx) => {
+      ctx.strokeStyle = 'rgba(120, 230, 255, 0.95)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(24, 24, 20, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(24, 24, 16, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(100, 220, 255, 0.06)';
+      ctx.beginPath();
+      ctx.arc(24, 24, 15, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    canvas('spike_tex', 18, 16, (ctx) => {
+      const spike = (x0: number) => {
+        ctx.fillStyle = '#5a2a24';
+        ctx.beginPath();
+        ctx.moveTo(x0, 16);
+        ctx.lineTo(x0 + 4, 1);
+        ctx.lineTo(x0 + 8, 16);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#e8d0b0';
+        ctx.fillRect(x0 + 3, 2, 2, 8);
+      };
+      spike(1);
+      spike(9);
+      ctx.fillStyle = '#3a2018';
+      ctx.fillRect(0, 14, 18, 2);
+    });
+
+    canvas('mover_tex', 54, 12, (ctx) => {
+      ctx.fillStyle = '#3a2a1c';
+      ctx.fillRect(0, 0, 54, 12);
+      ctx.fillStyle = '#c8a060';
+      ctx.fillRect(1, 1, 52, 10);
+      ctx.fillStyle = '#ead09a';
+      ctx.fillRect(1, 1, 52, 2);
+      ctx.fillStyle = '#8a6a38';
+      ctx.fillRect(1, 9, 52, 2);
+      for (const x of [8, 20, 32, 44]) {
+        ctx.fillStyle = '#6a4a28';
+        ctx.fillRect(x, 3, 4, 6);
+        ctx.fillStyle = '#ffe8b0';
+        ctx.fillRect(x + 1, 4, 2, 2);
+      }
+    });
+
+    canvas('door_sign_tex', 110, 42, (ctx) => {
+      ctx.fillStyle = 'rgba(12, 18, 28, 0.9)';
+      ctx.fillRect(0, 0, 110, 42);
+      ctx.strokeStyle = '#e8c04a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, 108, 40);
+      ctx.fillStyle = '#e8c04a';
+      ctx.fillRect(6, 10, 8, 22);
+      ctx.fillRect(8, 8, 4, 4);
+      ctx.fillStyle = '#1a1208';
+      ctx.fillRect(9, 18, 3, 4);
+    });
+
+    canvas('door_sign_open_tex', 110, 42, (ctx) => {
+      ctx.fillStyle = 'rgba(8, 32, 22, 0.9)';
+      ctx.fillRect(0, 0, 110, 42);
+      ctx.strokeStyle = '#66ffaa';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, 108, 40);
+      ctx.fillStyle = '#66ffaa';
+      ctx.fillRect(6, 10, 8, 22);
+      ctx.fillStyle = '#0a2018';
+      ctx.fillRect(12, 18, 4, 8);
+    });
   }
 }

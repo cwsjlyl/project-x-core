@@ -12,6 +12,7 @@ import { GameHud } from '../systems/Hud';
 import { ScienceProgress, TOPIC_BY_ID, pickBossQuestion, type TopicId } from '../systems/ScienceBank';
 import { ScienceUI } from '../systems/ScienceUI';
 import { STAGES, isStageId, type StageDef, type StageId, type EnemyKind } from '../systems/Stages';
+import { STAGE_HAZARDS, SPIKE_TINT, MOVER_TINT, SPIKE_DAMAGE } from '../systems/Hazards';
 import { finiteNumber, formatDamageText, isPositiveDamage } from '../systems/CombatMath';
 import { gameAudio } from '../systems/Audio';
 
@@ -76,6 +77,13 @@ export class GameScene extends Phaser.Scene {
   private battleClear = false;
   private victory = false;
   private doorHintCooldown = 0;
+  private stationExitGate: TopicId | null = null;
+  private spikeSafeHintCd = 0;
+  private spikeGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private moverGroup!: Phaser.Physics.Arcade.Group;
+  private doorSign: Phaser.GameObjects.Image | null = null;
+  private doorSignLabel: UiText | null = null;
+  private questHint: UiText | null = null;
   private checkpoint: { x: number; y: number } = { x: 80, y: 200 };
   private statusTimer = 0;
   private skyLayer!: Phaser.GameObjects.TileSprite;
@@ -240,8 +248,10 @@ export class GameScene extends Phaser.Scene {
       this.collectPickup(pObj as Phaser.Physics.Arcade.Sprite);
     });
 
+    this.spawnHazards();
+    this.createDoorSign();
     this.createHud();
-    this.touch = new TouchControls(this, this.gameInput);
+    this.touch = new TouchControls(this.gameInput);
     this.equipUI = new EquipmentUI(this, this.equipment, () => {
       this.player.refreshLoadout();
       this.syncLightRadius();
@@ -255,7 +265,6 @@ export class GameScene extends Phaser.Scene {
     );
 
     gameAudio.bind(this);
-    gameAudio.attachMuteButton(this, 408, 46);
 
     this.showBanner(this.stageDef.intro, 2800);
     this.applyDebugOrPreview();
@@ -269,18 +278,28 @@ export class GameScene extends Phaser.Scene {
         finishStation: (topic?: TopicId) => this.debugFinishStation(topic ?? 'sound'),
         panToTowers: () => this.debugBeachLayout(),
         persistBossHit: () => this.debugBossPersist(),
-        toggleMute: () => gameAudio.toggle()
+        toggleMute: () => gameAudio.toggle(),
+        stationOpen: () => this.debugStationOpen(),
+        stationClosed: () => this.debugStationClosed(),
+        hazards: () => this.debugHazards(),
+        gearFx: () => this.debugGearFx(),
+        doorHint: () => this.debugDoorHint(),
+        testSpike: (safe?: boolean) => this.debugTestSpike(!!safe),
+        testMover: () => this.debugTestMover(),
+        warp: (x: number, y: number) => this.player.reviveAt(x, y)
       };
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.removeAllKeys(true);
       this.time.removeAllEvents();
+      this.touch?.destroy();
     });
   }
 
   update(_time: number, delta: number): void {
     this.gameInput.poll();
     this.syncParallax();
+    if (this.spikeSafeHintCd > 0) this.spikeSafeHintCd -= delta;
 
     if (this.scienceUI?.isOpen) {
       this.updateHud();
@@ -318,6 +337,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.player.updatePlayer(delta);
+    this.updateMovers();
+    this.carryPlayerOnMover();
     if (this.playerLight) {
       this.playerLight.setPosition(this.player.x, this.player.y);
     }
@@ -542,12 +563,13 @@ export class GameScene extends Phaser.Scene {
       spr.refreshBody();
       this.applyLight(spr);
       const info = TOPIC_BY_ID[topic];
-      addUiText(this, s.x, s.y - 22, info.stationLabel, {
+      const label = addUiText(this, s.x, s.y - 22, info.stationLabel, {
         size: 12,
         color: '#7ef0ff',
         originX: 0.5,
         originY: 1
       }).setDepth(8);
+      spr.setData('label', label);
     }
     this.physics.add.overlap(this.player, this.stationGroup, (_p, sObj) => {
       const topic = (sObj as Phaser.Physics.Arcade.Sprite).getData('topic') as TopicId;
@@ -560,38 +582,30 @@ export class GameScene extends Phaser.Scene {
     const topic = this.resolveNearbyTopic();
     if (!topic || this.player.dead) {
       this.stationHint.setVisible(false);
+      this.stationExitGate = null;
       return false;
     }
-    const firstVisit = !this.autoOpened.has(topic);
-    const attempts = this.science.attemptCount(topic);
+    // Cleared / no attempts left: station is inert (no hint, no jump swallow).
     if (this.science.isCleared(topic) || !this.science.canAsk(topic)) {
-      this.stationHint.setText('完成啦');
-      this.stationHint.setVisible(true);
-      if (this.gameInput.jumpPressed) {
-        this.gameInput.jumpPressed = false;
-        this.showBanner('完成啦　呢個學習站已經答過兩題。', 1800);
-      }
+      this.stationHint.setVisible(false);
       return false;
     }
-    if (attempts === 1) {
-      this.stationHint.setText('仲有一題　按「跳」繼續');
-    } else {
-      this.stationHint.setText(firstVisit ? '重疊學習站即可開始　或按「跳」' : '按「跳」答題，最多兩題');
+    if (this.stationExitGate === topic) {
+      this.stationHint.setText('再接觸學習站就可以繼續答題');
+      this.stationHint.setVisible(true);
+      return false;
     }
-    this.stationHint.setVisible(true);
-    if (firstVisit || this.gameInput.jumpPressed) {
-      this.autoOpened.add(topic);
-      this.gameInput.jumpPressed = false;
-      this.openScienceStation(topic);
-      return true;
-    }
-    return false;
+    this.stationHint.setVisible(false);
+    this.autoOpened.add(topic);
+    this.openScienceStation(topic);
+    return true;
   }
 
   private openScienceStation(topic: TopicId): void {
     if (this.equipUI?.isOpen) this.equipUI.hide();
     this.scienceUI.show(topic);
     this.touch.setPaused(true);
+    this.stationExitGate = topic;
   }
 
   private resolveNearbyTopic(): TopicId | null {
@@ -620,6 +634,8 @@ export class GameScene extends Phaser.Scene {
     this.refreshStationLooks();
     if (this.science.allCleared && this.stageDef.requiresStations && !this.fightLocked) {
       this.doorBlocker.disableBody(true, true);
+      this.refreshDoorSign();
+      this.refreshQuestHint();
       this.showBanner(`五個學習站都完成喇！可以去挑戰${this.stageDef.bossName}。`, 2800);
     }
   }
@@ -629,9 +645,26 @@ export class GameScene extends Phaser.Scene {
     this.stationGroup.children.each((child) => {
       const spr = child as Phaser.Physics.Arcade.Sprite;
       const topic = spr.getData('topic') as TopicId;
-      if (this.science.isCleared(topic)) spr.setTint(0x66ffaa);
-      else if (this.science.attemptCount(topic) >= 1) spr.setTint(0xffe066);
-      else spr.clearTint();
+      const label = spr.getData('label') as UiText | undefined;
+      const closed = this.science.isCleared(topic) || !this.science.canAsk(topic);
+      if (closed) {
+        spr.setTint(0x3a4650);
+        spr.setAlpha(0.72);
+        if (spr.body) spr.disableBody(true, false);
+        if (label) {
+          const info = TOPIC_BY_ID[topic];
+          label.setColor('#8a969c');
+          label.setText(`${info.stationLabel} 已關閉`);
+        }
+      } else if (this.science.attemptCount(topic) >= 1) {
+        spr.setTint(0xffe066);
+        spr.setAlpha(1);
+        if (label) label.setColor('#7ef0ff');
+      } else {
+        spr.clearTint();
+        spr.setAlpha(1);
+        if (label) label.setColor('#7ef0ff');
+      }
       return true;
     });
   }
@@ -853,29 +886,29 @@ export class GameScene extends Phaser.Scene {
     bullet.setData('hitBoss', false);
     bullet.setData('trailAcc', 0);
     // Visibly smaller when unarmed; charged cannon shots grow by tier.
-    const scale = unarmed
+    const gearScale = Number.isFinite(payload.bulletScale) ? (payload.bulletScale as number) : 1;
+    const baseScale = unarmed
       ? level === 3
         ? 1.15
         : level === 2
           ? 1.0
           : 0.85
-      : level === 3
-        ? 1.0
-        : level === 2
-          ? 1.0
-          : 1.0;
+      : 1.0;
+    const scale = baseScale * Math.min(2.2, Math.max(0.6, gearScale));
     bullet.setScale(scale);
     bullet.clearTint();
     if (unarmed) bullet.setTint(level === 3 ? 0xb8e8ff : 0xd0eeff);
     const body = bullet.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(false);
     // Slightly generous hitboxes so grazing shots count.
-    const hitW = unarmed ? 12 : level === 3 ? 22 : level === 2 ? 18 : 14;
-    const hitH = unarmed ? 10 : level === 3 ? 14 : level === 2 ? 12 : 10;
+    const hitW = Math.round((unarmed ? 12 : level === 3 ? 22 : level === 2 ? 18 : 14) * scale);
+    const hitH = Math.round((unarmed ? 10 : level === 3 ? 14 : level === 2 ? 12 : 10) * scale);
     body.setSize(hitW, hitH);
     body.setOffset((bullet.width - hitW) / 2, (bullet.height - hitH) / 2);
-    bullet.setVelocityX(payload.dir * (unarmed ? 340 : 400));
-    bullet.setVelocityY(0);
+    const speed = unarmed ? 340 : 400;
+    const vy = Number.isFinite(payload.vy) ? (payload.vy as number) : 0;
+    bullet.setVelocityX(payload.dir * speed);
+    bullet.setVelocityY(speed * vy);
     this.spawnMuzzle(payload.x, payload.y, payload.dir, level, unarmed);
   }
 
@@ -1012,7 +1045,164 @@ export class GameScene extends Phaser.Scene {
     shot.disableBody(true, true);
   }
 
+  private spawnHazards(): void {
+    const pack = STAGE_HAZARDS[this.stageId];
+    this.spikeGroup = this.physics.add.staticGroup();
+    this.moverGroup = this.physics.add.group({ allowGravity: false, immovable: true });
+    const spikeTint = SPIKE_TINT[this.stageId];
+    const moverTint = MOVER_TINT[this.stageId];
+    const spikeKey = this.textures.exists('spike_tex') ? 'spike_tex' : 'pickup_tex';
+    const moverKey = this.textures.exists('mover_tex') ? 'mover_tex' : 'door_block_tex';
+
+    for (const s of pack.spikes) {
+      for (let i = 0; i < s.count; i++) {
+        const x = s.x + 9 + i * 18;
+        const y = s.surfaceY - 8;
+        const spr = this.spikeGroup.create(x, y, spikeKey) as Phaser.Physics.Arcade.Sprite;
+        spr.setDepth(6);
+        spr.setTint(spikeTint);
+        spr.refreshBody();
+        const body = spr.body as Phaser.Physics.Arcade.StaticBody;
+        body.setSize(14, 12);
+        body.setOffset(2, 4);
+      }
+    }
+    this.physics.add.overlap(this.player, this.spikeGroup, () => this.onSpikeHit());
+
+    for (const m of pack.movers) {
+      const spr = this.moverGroup.create(m.x, m.y, moverKey) as Phaser.Physics.Arcade.Sprite;
+      spr.setDisplaySize(m.w, m.h);
+      spr.setTint(moverTint);
+      spr.setDepth(4);
+      spr.setData('axis', m.axis);
+      spr.setData('min', m.min);
+      spr.setData('max', m.max);
+      spr.setData('speed', m.speed);
+      spr.setData('dir', 1);
+      const body = spr.body as Phaser.Physics.Arcade.Body;
+      body.setAllowGravity(false);
+      body.setImmovable(true);
+      body.setSize(m.w, m.h);
+      body.setOffset(0, 0);
+      if (m.axis === 'x') body.setVelocity(m.speed, 0);
+      else body.setVelocity(0, m.speed);
+    }
+    this.physics.add.collider(this.player, this.moverGroup);
+  }
+
+  private onSpikeHit(): void {
+    if (this.player.dead) return;
+    if (this.player.derived.spikeSafe) {
+      if (this.spikeSafeHintCd <= 0) {
+        this.showFloatingText(this.player.x, this.player.y - 22, '不怕尖刺', '#66ffaa');
+        this.spikeSafeHintCd = 900;
+      }
+      return;
+    }
+    if (this.player.invulnerable) return;
+    this.player.takeDamage(SPIKE_DAMAGE);
+  }
+
+  private updateMovers(): void {
+    if (!this.moverGroup) return;
+    this.moverGroup.children.each((child) => {
+      const spr = child as Phaser.Physics.Arcade.Sprite;
+      if (!spr.active) return true;
+      const body = spr.body as Phaser.Physics.Arcade.Body;
+      const axis = spr.getData('axis') as 'x' | 'y';
+      const min = finiteNumber(spr.getData('min'));
+      const max = finiteNumber(spr.getData('max'));
+      const speed = finiteNumber(spr.getData('speed'), 40);
+      let dir = finiteNumber(spr.getData('dir'), 1) >= 0 ? 1 : -1;
+      if (axis === 'x') {
+        if (spr.x >= max) dir = -1;
+        if (spr.x <= min) dir = 1;
+        spr.setData('dir', dir);
+        body.setVelocity(dir * speed, 0);
+      } else {
+        if (spr.y >= max) dir = -1;
+        if (spr.y <= min) dir = 1;
+        spr.setData('dir', dir);
+        body.setVelocity(0, dir * speed);
+      }
+      body.setImmovable(true);
+      return true;
+    });
+  }
+
+  private carryPlayerOnMover(): void {
+    if (!this.moverGroup || this.player.dead) return;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (!body.blocked.down && !body.touching.down) return;
+    let ride: Phaser.Physics.Arcade.Sprite | null = null;
+    this.moverGroup.children.each((child) => {
+      const spr = child as Phaser.Physics.Arcade.Sprite;
+      const mb = spr.body as Phaser.Physics.Arcade.Body;
+      if (!spr.active || !mb) return true;
+      const onTop =
+        mb.touching.up ||
+        (body.bottom <= mb.top + 6 &&
+          body.bottom >= mb.top - 4 &&
+          body.right > mb.left + 2 &&
+          body.left < mb.right - 2);
+      if (onTop) ride = spr;
+      return true;
+    });
+    if (!ride) return;
+    const mb = (ride as Phaser.Physics.Arcade.Sprite).body as Phaser.Physics.Arcade.Body;
+    this.player.x += mb.deltaX();
+    if (mb.velocity.y < 0 || body.velocity.y >= 0) {
+      this.player.y += mb.deltaY();
+    }
+  }
+
+  private createDoorSign(): void {
+    if (!this.stageDef.requiresStations) return;
+    const d = this.stage.door;
+    const x = d.x + d.width / 2;
+    const y = Math.max(48, d.y - 28);
+    const key = this.textures.exists('door_sign_tex') ? 'door_sign_tex' : 'door_block_tex';
+    this.doorSign = this.add.image(x, y, key).setDepth(7);
+    this.doorSignLabel = addUiText(this, x + 6, y, '', {
+      size: 12,
+      color: '#ffe08a',
+      originX: 0.5,
+      originY: 0.5,
+      align: 'center',
+      wordWrap: 88
+    }).setDepth(8);
+    this.refreshDoorSign();
+  }
+
+  private refreshDoorSign(): void {
+    if (!this.doorSign || !this.doorSignLabel) return;
+    const open = !this.stageDef.requiresStations || this.science.allCleared;
+    const openKey = this.textures.exists('door_sign_open_tex') ? 'door_sign_open_tex' : 'door_sign_tex';
+    const lockKey = this.textures.exists('door_sign_tex') ? 'door_sign_tex' : 'door_block_tex';
+    this.doorSign.setTexture(open ? openKey : lockKey);
+    this.doorSignLabel.setColor(open ? '#b8ffd0' : '#ffe08a');
+    this.doorSignLabel.setText(open ? '可以挑戰首領' : '要完成全部學習站\n才可挑戰首領');
+  }
+
+  private refreshQuestHint(): void {
+    if (!this.questHint) return;
+    if (!this.stageDef.requiresStations) {
+      this.questHint.setVisible(false);
+      return;
+    }
+    if (this.science.allCleared) {
+      this.questHint.setColor('#b8ffd0');
+      this.questHint.setText('學習站已完成，可以挑戰首領');
+      this.questHint.setVisible(true);
+      return;
+    }
+    this.questHint.setColor('#ffe08a');
+    this.questHint.setText('要完成全部學習站才可挑戰首領');
+    this.questHint.setVisible(true);
+  }
+
   private createHud(): void {
+
     this.hud = new GameHud(this);
     this.hud.create();
 
@@ -1039,6 +1229,18 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(220)
       .setVisible(false);
+
+    this.questHint = addUiText(this, 240, 36, '', {
+      size: 12,
+      color: '#ffe08a',
+      originX: 0.5,
+      originY: 0,
+      align: 'center'
+    })
+      .setScrollFactor(0)
+      .setDepth(220)
+      .setVisible(false);
+    this.refreshQuestHint();
 
     this.messageText = addUiText(this, 240, 72, '', {
       size: 12,
@@ -1228,6 +1430,16 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(200, () => this.debugBeachLayout());
     } else if (debug === 'boss-persist') {
       this.time.delayedCall(220, () => this.debugBossPersist());
+    } else if (debug === 'station-open') {
+      this.time.delayedCall(240, () => this.debugStationOpen());
+    } else if (debug === 'station-closed') {
+      this.time.delayedCall(240, () => this.debugStationClosed());
+    } else if (debug === 'hazards') {
+      this.time.delayedCall(240, () => this.debugHazards());
+    } else if (debug === 'gear-fx') {
+      this.time.delayedCall(240, () => this.debugGearFx());
+    } else if (debug === 'door-hint') {
+      this.time.delayedCall(200, () => this.debugDoorHint());
     }
   }
 
@@ -1263,6 +1475,9 @@ export class GameScene extends Phaser.Scene {
         this.science.clearedTopics.add(topic);
       }
       this.doorBlocker.disableBody(true, true);
+      this.refreshStationLooks();
+      this.refreshDoorSign();
+      this.refreshQuestHint();
     }
     this.player.reviveAt(this.stage.bossSpawn.x - 90, this.stage.playerSpawn.y);
     this.beginBossFight();
@@ -1358,7 +1573,128 @@ export class GameScene extends Phaser.Scene {
     this.onScienceProgress();
   }
 
+  debugStationOpen(): void {
+    const station = this.stage.scienceStations.find((s) => s.topic === 'sound') ?? this.stage.scienceStations[0];
+    if (!station) return;
+    this.player.reviveAt(station.x, station.y);
+    this.panPreviewTo(station.x, 135);
+  }
+
+  debugStationClosed(): void {
+    this.debugFinishStation('sound');
+    const station = this.stage.scienceStations.find((s) => s.topic === 'sound');
+    if (station) {
+      this.player.reviveAt(station.x + 28, station.y);
+      (this.player as unknown as { invulnTimer: number }).invulnTimer = 0;
+      this.player.setAlpha(1);
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0, -420);
+      this.panPreviewTo(station.x, 135);
+      this.messageText.setVisible(false);
+    }
+  }
+
+  debugHazards(): void {
+    const first = this.moverGroup?.getChildren()?.[0] as Phaser.Physics.Arcade.Sprite | undefined;
+    if (first) {
+      const top = first.y - first.displayHeight / 2;
+      this.player.reviveAt(first.x, top - 18);
+      this.panPreviewTo(first.x, 135);
+    } else {
+      this.player.reviveAt(840, this.stage.playerSpawn.y);
+      this.panPreviewTo(840, 135);
+    }
+  }
+
+  debugGearFx(): void {
+    const ids = [
+      'helm_thunder',
+      'body_energy',
+      'arms_frost',
+      'legs_airdash',
+      'chip_iframe',
+      'chip_double'
+    ];
+    for (const id of ids) this.equipment.grant(id);
+    this.equipment.equip('helm_thunder');
+    this.equipment.equip('body_energy');
+    this.equipment.equip('arms_frost');
+    this.equipment.equip('legs_airdash');
+    this.equipment.equip('chip_iframe', 'chip1');
+    this.equipment.equip('chip_double', 'chip2');
+    this.player.refreshLoadout();
+    this.equipUI.refresh();
+    this.player.reviveAt(420, this.stage.playerSpawn.y);
+    this.panPreviewTo(420, 135);
+    this.player.previewShield(2000);
+    this.spawnBullet({
+      x: this.player.x + 18,
+      y: this.player.y,
+      dir: 1,
+      chargeLevel: 2,
+      damage: 18,
+      unarmed: false,
+      bulletScale: 1.6
+    });
+    this.spawnBullet({
+      x: this.player.x + 18,
+      y: this.player.y,
+      dir: 1,
+      chargeLevel: 2,
+      damage: 18,
+      unarmed: false,
+      vy: -0.34,
+      bulletScale: 1.6
+    });
+    this.spawnBullet({
+      x: this.player.x + 18,
+      y: this.player.y,
+      dir: 1,
+      chargeLevel: 2,
+      damage: 18,
+      unarmed: false,
+      vy: 0.34,
+      bulletScale: 1.6
+    });
+  }
+
+  debugDoorHint(): void {
+    this.player.reviveAt(2208, this.stage.playerSpawn.y);
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(2248, 135);
+    this.refreshDoorSign();
+    this.refreshQuestHint();
+  }
+
+  debugTestSpike(safe: boolean): { hpBefore: number; hpAfter: number; safe: boolean } {
+    if (safe) {
+      this.equipment.grant('body_energy');
+      this.equipment.equip('body_energy');
+      this.player.refreshLoadout();
+    } else {
+      this.equipment.unequip('body');
+      this.player.refreshLoadout();
+    }
+    const pack = STAGE_HAZARDS[this.stageId];
+    const s = pack.spikes[0];
+    this.player.reviveAt(s.x + 18, s.surfaceY - 18);
+    (this.player as unknown as { invulnTimer: number }).invulnTimer = 0;
+    this.player.setAlpha(1);
+    const hpBefore = this.player.hp;
+    this.onSpikeHit();
+    return { hpBefore, hpAfter: this.player.hp, safe: this.player.derived.spikeSafe };
+  }
+
+  debugTestMover(): { onMover: boolean; x: number; y: number } {
+    const first = this.moverGroup?.getChildren()?.[0] as Phaser.Physics.Arcade.Sprite | undefined;
+    if (!first) return { onMover: false, x: 0, y: 0 };
+    const top = first.y - first.displayHeight / 2;
+    this.player.reviveAt(first.x, top - 18);
+    return { onMover: true, x: first.x, y: first.y };
+  }
+
   debugEquipLook(alt: boolean): void {
+
     const grant = [
       'helm_starter', 'body_starter', 'arms_starter', 'legs_starter',
       'helm_scout', 'helm_thunder', 'body_energy', 'body_leaf',
