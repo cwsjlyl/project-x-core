@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import type { GameInput } from '../systems/GameInput';
 import type { DerivedStats, EquipmentSystem } from '../systems/Equipment';
+import { bakeHeroLook, chipAuraTint, LOOK_KEY } from '../systems/HeroLook';
+import { finiteNumber, isPositiveDamage } from '../systems/CombatMath';
 
 export interface ShotPayload {
   x: number;
@@ -37,6 +39,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private airDashesLeft = 0;
   private regenAcc = 0;
   private shootPoseTimer = 0;
+  private stunTimer = 0;
+  private aura: Phaser.GameObjects.Image | null = null;
   private stats: DerivedStats;
   private readonly usesSheet: boolean;
 
@@ -49,8 +53,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     private readonly onFireCallback: (payload: ShotPayload) => void,
     private readonly onGhostCallback: (x: number, y: number, flipX: boolean) => void
   ) {
-    const usesSheet = scene.textures.exists('player');
-    super(scene, x, y, usesSheet ? 'player' : 'player_tex');
+    const usesSheet = scene.textures.exists(LOOK_KEY) || scene.textures.exists('player');
+    const key = scene.textures.exists(LOOK_KEY) ? LOOK_KEY : usesSheet ? 'player' : 'player_tex';
+    super(scene, x, y, key);
     this.usesSheet = usesSheet;
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -61,6 +66,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.usesSheet) {
       this.play('player-idle', true);
     }
+    bakeHeroLook(scene, this.equipment);
+    this.syncAura();
   }
 
   private setupBody(): void {
@@ -112,6 +119,37 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.hp = Math.max(1, Math.min(nextMax, Math.round(ratio * nextMax)));
     }
     if (!this.stats.canAirDash) this.airDashesLeft = 0;
+    bakeHeroLook(this.scene, this.equipment);
+    this.syncAura();
+  }
+
+  stun(ms: number, opts?: { invuln?: boolean }): void {
+    if (this.dead) return;
+    this.stunTimer = Math.max(this.stunTimer, ms);
+    this.chargeTime = 0;
+    this.isDashing = false;
+    this.setVelocity(0, 0);
+    this.clearTint();
+    if (opts?.invuln) {
+      this.invulnTimer = Math.max(this.invulnTimer, ms);
+    }
+  }
+
+  get isStunned(): boolean {
+    return this.stunTimer > 0;
+  }
+
+  restore(data: { level: number; exp: number; nextExp: number; baseMaxHp: number; hp: number; baseAtk: number }): void {
+    this.level = data.level;
+    this.exp = data.exp;
+    this.nextExp = data.nextExp;
+    this.baseMaxHp = data.baseMaxHp;
+    this.baseAtk = data.baseAtk;
+    this.stats = this.equipment.derive();
+    const hp = finiteNumber(data.hp, this.maxHp);
+    this.hp = Math.max(1, Math.min(this.maxHp, hp));
+    bakeHeroLook(this.scene, this.equipment);
+    this.syncAura();
   }
 
   updatePlayer(delta: number): void {
@@ -122,6 +160,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.stats = this.equipment.derive();
+    this.syncAura();
+    if (this.stunTimer > 0) {
+      this.stunTimer -= delta;
+      this.setVelocity(0, 0);
+      this.chargeTime = 0;
+      this.setTint(Math.floor(this.stunTimer / 80) % 2 === 0 ? 0xffff66 : 0xffffff);
+      if (this.invulnTimer > 0) this.invulnTimer -= delta;
+      if (this.stunTimer <= 0) this.clearTint();
+      this.updateAnimation(true, false, 0);
+      return;
+    }
     const body = this.body as Phaser.Physics.Arcade.Body;
     const onGround = body.blocked.down;
     const onWallLeft = body.blocked.left && !onGround;
@@ -256,7 +305,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       chargeLevel = 2;
       multiplier = 1.8;
     }
-    const damage = Math.round(this.attack * multiplier);
+    const damage = Math.max(1, Math.round(finiteNumber(this.attack, 12) * multiplier));
+    if (!Number.isFinite(damage) || damage <= 0) return;
     const payload: ShotPayload = {
       x: this.x + this.facing * 14,
       y: this.y + 1,
@@ -294,7 +344,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   takeDamage(dmg: number): void {
     if (this.invulnTimer > 0 || this.dead) return;
-    const reduced = Math.max(1, Math.round(dmg * (1 - this.stats.damageReduction)));
+    if (!isPositiveDamage(dmg)) return;
+    const reduced = Math.max(1, Math.round(dmg * (1 - finiteNumber(this.stats.damageReduction))));
+    if (!Number.isFinite(reduced)) return;
     this.hp = Math.max(0, this.hp - reduced);
     this.invulnTimer = this.stats.invulnMs;
     if (this.hp <= 0) {
@@ -311,10 +363,33 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.chargeTime = 0;
     this.isDashing = false;
     this.shootPoseTimer = 0;
+    this.stunTimer = 0;
     this.clearTint();
     this.setAlpha(1);
     this.enableBody(true, x, y, true, true);
     this.setVelocity(0, 0);
     this.setupBody();
+  }
+
+  private syncAura(): void {
+    if (!this.aura) {
+      const key = this.scene.textures.exists('aura_tex') ? 'aura_tex' : '';
+      if (!key) return;
+      this.aura = this.scene.add.image(this.x, this.y, key).setDepth(9);
+    }
+    const tint = chipAuraTint(this.equipment);
+    this.aura.setPosition(this.x, this.y + 6);
+    this.aura.setVisible(!!tint && this.visible && !this.dead);
+    if (tint) this.aura.setTint(tint);
+    this.aura.setAlpha(this.alpha * 0.55);
+    this.aura.setScale(1.2);
+  }
+
+  preUpdate(time: number, delta: number): void {
+    super.preUpdate(time, delta);
+    if (this.aura) {
+      this.aura.setPosition(this.x, this.y + 6);
+      this.aura.setAlpha(this.alpha * 0.55);
+    }
   }
 }

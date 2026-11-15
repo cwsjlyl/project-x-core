@@ -1,5 +1,15 @@
 import Phaser from 'phaser';
 import type { Player } from './Player';
+import type { BossTheme } from '../systems/Stages';
+import { isPositiveDamage } from '../systems/CombatMath';
+
+export interface BossProfile {
+  name: string;
+  textureKey: string;
+  theme: BossTheme;
+  maxHp: number;
+}
+
 
 export type BossShotKind = 'bolt' | 'orb' | 'shock' | 'spiral';
 
@@ -22,9 +32,12 @@ export interface ArenaBounds {
 
 type BossMode = 'idle' | 'walk' | 'telegraph' | 'attack' | 'roar' | 'dead';
 
-export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
-  readonly maxHp = 600;
-  hp = 600;
+export class StageBoss extends Phaser.Physics.Arcade.Sprite {
+  readonly bossName: string;
+  readonly theme: BossTheme;
+
+  readonly maxHp: number;
+  hp: number;
   phase: 1 | 2 | 3 = 1;
   fightStarted = false;
   defeated = false;
@@ -41,20 +54,28 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
   private pendingShots: { at: number; req: BossShotRequest }[] = [];
   private aura: Phaser.GameObjects.Rectangle | null = null;
 
+  private stunTimer = 0;
+
   constructor(
     scene: Phaser.Scene,
     x: number,
     y: number,
     private readonly arena: ArenaBounds,
-    private readonly spawnShot: (req: BossShotRequest) => void
+    private readonly spawnShot: (req: BossShotRequest) => void,
+    profile?: BossProfile
   ) {
-    const key = scene.textures.exists('boss') ? 'boss' : 'boss_tex';
+    const fallback = scene.textures.exists('boss') ? 'boss' : 'boss_tex';
+    const key = profile && scene.textures.exists(profile.textureKey) ? profile.textureKey : fallback;
     super(scene, x, y, key);
+    this.bossName = profile?.name ?? '潮汐巨蟹';
+    this.theme = profile?.theme ?? 'crab';
+    this.maxHp = profile?.maxHp ?? 600;
+    this.hp = this.maxHp;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setCollideWorldBounds(true);
-    if (key === 'boss') {
-      // 80×64 beach-crab sprite; body sits on the feet.
+    if (scene.textures.exists(key) && key !== 'boss_tex') {
+      // 80×64 animal bosses; body sits on the feet.
       this.setSize(56, 44);
       this.setOffset(12, 20);
     } else {
@@ -63,6 +84,22 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
     }
     this.setDepth(10);
     this.setBounce(0);
+  }
+
+  stun(ms: number): void {
+    if (this.defeated) return;
+    this.stunTimer = Math.max(this.stunTimer, ms);
+    this.pendingShots = [];
+    this.setVelocity(0, 0);
+    this.setTintFill(0xffff88);
+  }
+
+  get isStunned(): boolean {
+    return this.stunTimer > 0;
+  }
+
+  clearInvuln(): void {
+    this.invuln = 0;
   }
 
   startFight(): void {
@@ -78,6 +115,7 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
     this.phase = 1;
     this.contactDamage = 18;
     this.pendingShots = [];
+    this.stunTimer = 0;
     this.invuln = 900;
     this.fightStarted = true;
     this.clearTint();
@@ -93,7 +131,8 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
 
   takeDamage(amount: number): boolean {
     if (!this.fightStarted || this.defeated || this.invuln > 0) return false;
-    this.hp = Math.max(0, this.hp - amount);
+    if (!isPositiveDamage(amount)) return false;
+    this.hp = Math.max(0, this.hp - Math.round(amount));
     this.setTintFill(0xffffff);
     this.scene.time.delayedCall(50, () => {
       if (!this.active) return;
@@ -111,6 +150,17 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
   updateBoss(delta: number, player: Player): void {
     if (!this.fightStarted || !this.active) return;
     if (this.invuln > 0) this.invuln -= delta;
+    if (this.stunTimer > 0) {
+      this.stunTimer -= delta;
+      this.setVelocity(0, 0);
+      this.pendingShots = [];
+      this.setTint(Math.floor(this.stunTimer / 80) % 2 === 0 ? 0xffff66 : 0xffffff);
+      if (this.stunTimer <= 0) {
+        this.clearTint();
+        this.applyPhaseTint();
+      }
+      return;
+    }
     this.elapsed += delta;
 
     if (this.pendingShots.length > 0) {
@@ -404,3 +454,5 @@ export class ThunderRhino extends Phaser.Physics.Arcade.Sprite {
     return `第 ${this.phase} 階段`;
   }
 }
+
+export { StageBoss as ThunderRhino };
