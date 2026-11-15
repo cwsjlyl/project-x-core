@@ -13,6 +13,7 @@ import { ScienceProgress, TOPIC_BY_ID, pickBossQuestion, type TopicId } from '..
 import { ScienceUI } from '../systems/ScienceUI';
 import { STAGES, isStageId, type StageDef, type StageId, type EnemyKind } from '../systems/Stages';
 import { finiteNumber, formatDamageText, isPositiveDamage } from '../systems/CombatMath';
+import { gameAudio } from '../systems/Audio';
 
 const PICKUP_TINT: Record<string, number> = {
   helmet: 0x66e0ff,
@@ -203,11 +204,14 @@ export class GameScene extends Phaser.Scene {
       this.recycleEnemyShot(s);
     });
 
-    this.physics.add.overlap(this.bulletPool, this.enemies, (bObj, eObj) => {
-      this.onBulletHitEnemy(bObj as Phaser.Physics.Arcade.Sprite, eObj as AnimalEnemy);
+    this.physics.add.overlap(this.bulletPool, this.enemies, (a, b) => {
+      const bullet = this.asPlayerBullet(a) ?? this.asPlayerBullet(b);
+      const enemy = this.asEnemy(a) ?? this.asEnemy(b);
+      if (bullet && enemy) this.onBulletHitEnemy(bullet, enemy);
     });
-    this.physics.add.overlap(this.bulletPool, this.boss, (bObj) => {
-      this.onBulletHitBoss(bObj as Phaser.Physics.Arcade.Sprite);
+    this.physics.add.overlap(this.bulletPool, this.boss, (a, b) => {
+      const bullet = this.asPlayerBullet(a) ?? this.asPlayerBullet(b);
+      if (bullet) this.onBulletHitBoss(bullet);
     });
     this.physics.add.overlap(this.player, this.enemies, (_p, eObj) => {
       const enemy = eObj as AnimalEnemy;
@@ -250,6 +254,9 @@ export class GameScene extends Phaser.Scene {
       () => this.touch.setPaused(false)
     );
 
+    gameAudio.bind(this);
+    gameAudio.attachMuteButton(this, 408, 46);
+
     this.showBanner(this.stageDef.intro, 2800);
     this.applyDebugOrPreview();
     if (this.debugParam()) {
@@ -259,7 +266,10 @@ export class GameScene extends Phaser.Scene {
         openEquip: () => this.debugOpenEquip(),
         hitEnemy: () => this.debugEnemyHit(),
         fireShot: (level?: 1 | 2 | 3) => this.debugShotFx(level ?? 3),
-        finishStation: (topic?: TopicId) => this.debugFinishStation(topic ?? 'sound')
+        finishStation: (topic?: TopicId) => this.debugFinishStation(topic ?? 'sound'),
+        panToTowers: () => this.debugBeachLayout(),
+        persistBossHit: () => this.debugBossPersist(),
+        toggleMute: () => gameAudio.toggle()
       };
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -473,6 +483,7 @@ export class GameScene extends Phaser.Scene {
     const item = ITEM_CATALOG[itemId];
     spr.disableBody(true, true);
     if (!item) return;
+    gameAudio.play('pickup');
     const granted = this.equipment.grant(itemId);
     const msg = granted ? `獲得：${item.name}　打開「裝備」就可以裝上` : `已擁有：${item.name}`;
     this.showBanner(msg, 2400);
@@ -641,6 +652,7 @@ export class GameScene extends Phaser.Scene {
     const a = this.stage.arena;
     this.cameras.main.setBounds(a.x, a.y, a.width, a.height);
     this.boss.startFight();
+    gameAudio.play('roar');
     this.showBanner(`${this.stageDef.bossName}　降臨`, 1800);
     this.bossBarBg.setVisible(true);
     this.bossBarFill.setVisible(true);
@@ -648,8 +660,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onBossDefeated(): void {
+    if (this.battleClear) return;
+    if (!this.boss.defeated || this.boss.hp > 0) return;
+    this.boss.stayPresent();
     this.battleClear = true;
     this.fightLocked = false;
+    gameAudio.play('win');
     this.doorBlocker.disableBody(true, true);
     this.cameras.main.setBounds(0, 0, this.stage.worldWidth, this.stage.worldHeight);
     const leveled = this.player.gainExp(200);
@@ -715,6 +731,7 @@ export class GameScene extends Phaser.Scene {
     }
     const level = finiteNumber(bullet.getData('chargeLevel'), 1);
     const slain = enemy.takeHit(dmg);
+    gameAudio.play('hit');
     this.spawnSpark(enemy.x, enemy.y, level === 3 ? 0x66ffff : 0xfff0a0, level === 3 ? 3 : level === 2 ? 2 : 1);
     this.showFloatingText(enemy.x, enemy.y - 12, formatDamageText(dmg), level === 3 ? '#00ffff' : '#ffeb3b');
     if (level < 3 || enemy.hp > 0) this.recycleBullet(bullet);
@@ -726,7 +743,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onBulletHitBoss(bullet: Phaser.Physics.Arcade.Sprite): void {
-    if (!bullet.active || !this.boss.active || !this.boss.fightStarted) return;
+    if (!this.asPlayerBullet(bullet) || !bullet.active || !this.boss.fightStarted) return;
+    if (this.boss.defeated) {
+      this.recycleBullet(bullet);
+      return;
+    }
+    if (bullet.getData('hitBoss')) return;
     const base = finiteNumber(bullet.getData('damage'));
     if (!isPositiveDamage(base)) {
       this.recycleBullet(bullet);
@@ -739,8 +761,11 @@ export class GameScene extends Phaser.Scene {
       this.recycleBullet(bullet);
       return;
     }
+    bullet.setData('hitBoss', true);
     const prevHp = this.boss.hp;
     const slain = this.boss.takeDamage(dmg);
+    this.boss.stayPresent();
+    if (prevHp !== this.boss.hp) gameAudio.play('boss_hit');
     this.spawnSpark(this.boss.x, this.boss.y - 8, level === 3 ? 0x66ffff : 0xfff0a0, level === 3 ? 3 : 2);
     this.showFloatingText(this.boss.x, this.boss.y - 20, formatDamageText(dmg), level === 3 ? '#00ffff' : '#ffeb3b');
     if (level < 3 || this.boss.hp > 0) this.recycleBullet(bullet);
@@ -796,6 +821,7 @@ export class GameScene extends Phaser.Scene {
       duration: 400,
       onComplete: () => bolt.destroy()
     });
+    gameAudio.play(hitBoss ? 'correct' : 'wrong');
     this.showBanner(hitBoss ? '答對！電擊首領 1.5 秒' : '答錯！主角被電擊 1.5 秒', 1600);
   }
 
@@ -824,6 +850,7 @@ export class GameScene extends Phaser.Scene {
     bullet.setData('damage', damage);
     bullet.setData('chargeLevel', level);
     bullet.setData('unarmed', unarmed);
+    bullet.setData('hitBoss', false);
     bullet.setData('trailAcc', 0);
     // Visibly smaller when unarmed; charged cannon shots grow by tier.
     const scale = unarmed
@@ -852,8 +879,25 @@ export class GameScene extends Phaser.Scene {
     this.spawnMuzzle(payload.x, payload.y, payload.dir, level, unarmed);
   }
 
+  private asPlayerBullet(obj: unknown): Phaser.Physics.Arcade.Sprite | null {
+    if (!obj || obj === this.boss || obj === this.player) return null;
+    const spr = obj as Phaser.Physics.Arcade.Sprite;
+    if (!this.bulletPool.contains(spr)) return null;
+    return spr;
+  }
+
+  private asEnemy(obj: unknown): AnimalEnemy | null {
+    if (!obj || obj === this.boss || obj === this.player) return null;
+    const spr = obj as AnimalEnemy;
+    if (!this.enemies.contains(spr)) return null;
+    return spr;
+  }
+
   private recycleBullet(bullet: Phaser.Physics.Arcade.Sprite): void {
+    // Never recycle the boss / player if an overlap callback swaps arguments.
+    if (!this.asPlayerBullet(bullet)) return;
     bullet.setData('damage', 0);
+    bullet.setData('hitBoss', false);
     bullet.setData('trailAcc', 0);
     bullet.disableBody(true, true);
   }
@@ -1180,7 +1224,34 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(220, () => this.debugShotFx(3));
     } else if (debug === 'station-done') {
       this.time.delayedCall(200, () => this.debugFinishStation('sound'));
+    } else if (debug === 'beach-layout') {
+      this.time.delayedCall(200, () => this.debugBeachLayout());
+    } else if (debug === 'boss-persist') {
+      this.time.delayedCall(220, () => this.debugBossPersist());
     }
+  }
+
+  /** Local preview: mid staircase and lowered right towers. */
+  debugBeachLayout(): void {
+    this.player.reviveAt(1320, this.stage.playerSpawn.y);
+    this.panPreviewTo(1380, 135);
+  }
+
+  /** Local preview: first bullet hits the crab boss; it must stay visible. */
+  debugBossPersist(): void {
+    this.debugStartBoss(false);
+    this.boss.clearInvuln();
+    const b = this.boss;
+    this.spawnBullet({
+      x: b.x - 40,
+      y: b.y,
+      dir: 1,
+      chargeLevel: 1,
+      damage: 18,
+      unarmed: false
+    });
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(b.x - 20, 135);
   }
 
   /** Preview hook: jump into the current stage's boss arena. */

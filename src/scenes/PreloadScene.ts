@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { addUiText, waitForUiFonts } from '../systems/UiText';
 import { ensureLookTexture } from '../systems/HeroLook';
+import { preloadSfx } from '../systems/Audio';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -99,6 +100,7 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('boss_forest', 'assets/sprites/boss_forest.png');
     this.load.image('boss_polar', 'assets/sprites/boss_polar.png');
     this.load.image('boss_desert', 'assets/sprites/boss_desert.png');
+    preloadSfx(this);
   }
 
   create(): void {
