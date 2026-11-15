@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { GameScene } from './scenes/GameScene';
 
@@ -9,7 +10,7 @@ const config: Phaser.Types.Core.GameConfig = {
   height: 270,
   pixelArt: true,
   roundPixels: true,
-  backgroundColor: '#6a181c',
+  backgroundColor: '#5ec8ee',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
@@ -25,7 +26,7 @@ const config: Phaser.Types.Core.GameConfig = {
   input: {
     activePointers: 5
   },
-  scene: [PreloadScene, GameScene]
+  scene: [BootScene, PreloadScene, GameScene]
 };
 
 const game = new Phaser.Game(config);

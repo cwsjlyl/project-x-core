@@ -5,3 +5,6 @@ export const WORLD = {
   width: 2880,
   height: 270
 } as const;
+
+/** Display name of the stage boss (original beach animal, not official Mega Man). */
+export const BOSS_NAME = '潮汐巨蟹';
