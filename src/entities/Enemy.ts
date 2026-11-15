@@ -60,10 +60,18 @@ export function createAnimalEnemy(
   spawnShot: (req: EnemyShotRequest) => void
 ): AnimalEnemy {
   const flying = FLYING_KINDS.has(kind);
-  const spawnY = flying ? Math.min(y - 72, 130) : y;
+  const ENEMY_SCALE = 1.7;
+  const srcH = 24;
+  const displayH = srcH * ENEMY_SCALE;
+  // Map objects are 18px tall; y is the object centre. Sit grounded feet on the floor.
+  const spawnY = flying
+    ? Math.min(y - 72, 130)
+    : y - Math.max(0, displayH / 2 - 9);
   const enemy = group.create(x, spawnY, textureKey, frame) as AnimalEnemy;
   enemy.setCollideWorldBounds(true);
   enemy.setDepth(9);
+  enemy.setScale(ENEMY_SCALE);
+  enemy.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
   enemy.hp = 45;
   enemy.maxHp = 45;
   enemy.kind = kind;
@@ -73,8 +81,9 @@ export function createAnimalEnemy(
   enemy.patrolMax = patrolMax;
   enemy.hoverY = spawnY;
   const body = enemy.body as Phaser.Physics.Arcade.Body;
+  // Source sizes (~16×16) scale with the sprite to about 27 world px.
   body.setSize(16, flying ? 14 : 16);
-  body.setOffset(4, flying ? 4 : 6);
+  body.setOffset(4, flying ? 5 : 8);
   body.setAllowGravity(!flying);
   if (flying) body.setGravityY(-scene.physics.world.gravity.y);
 

@@ -10,6 +10,7 @@ export interface ShotPayload {
   dir: number;
   chargeLevel: 1 | 2 | 3;
   damage: number;
+  unarmed?: boolean;
 }
 
 const DISPLAY_W = 36;
@@ -25,7 +26,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public exp = 0;
   public nextExp = 50;
   public baseMaxHp = 100;
-  public hp = 108;
+  public hp = 100;
   public baseAtk = 12;
   public dead = false;
 
@@ -204,7 +205,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       (onGround || onWallLeft || onWallRight || canAirDash)
     ) {
       this.isDashing = true;
-      this.dashTimer = 240;
+      // Short basic dash without leg armor; full dash when legs are on.
+      this.dashTimer = this.equipment.hasLegs() ? 240 : 160;
       if (!onGround && !onWallLeft && !onWallRight) {
         this.airDashesLeft = Math.max(0, this.airDashesLeft - 1);
       }
@@ -227,7 +229,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.wallKickLockTimer > 0) {
       this.wallKickLockTimer -= delta;
     } else {
-      const moveSpeed = this.isDashing ? 270 : 145;
+      const moveSpeed = this.isDashing ? (this.equipment.hasLegs() ? 270 : 200) : 145;
       if (input.left) {
         this.facing = -1;
         this.setFlipX(true);
@@ -305,6 +307,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       chargeLevel = 2;
       multiplier = 1.8;
     }
+    const unarmed = !this.equipment.hasArms();
+    // Unarmed default pellet: same 3 charge tiers, but weaker than a cannon shot.
+    if (unarmed) multiplier *= 0.6;
     const damage = Math.max(1, Math.round(finiteNumber(this.attack, 12) * multiplier));
     if (!Number.isFinite(damage) || damage <= 0) return;
     const payload: ShotPayload = {
@@ -312,7 +317,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       y: this.y + 1,
       dir: this.facing,
       chargeLevel,
-      damage
+      damage,
+      unarmed
     };
     this.onFireCallback(payload);
     if (this.stats.doubleShot) {
