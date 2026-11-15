@@ -38,6 +38,7 @@ export class GameAudio {
   private unlocked = false;
   private muteBg: Phaser.GameObjects.Arc | null = null;
   private muteLabel: UiText | null = null;
+  private readonly listeners = new Set<(muted: boolean) => void>();
 
   get isMuted(): boolean {
     return this.muted;
@@ -120,6 +121,17 @@ export class GameAudio {
       /* ignore */
     }
     this.refreshButton();
+    this.emit();
+  }
+
+  onChange(fn: (muted: boolean) => void): () => void {
+    this.listeners.add(fn);
+    fn(this.muted);
+    return () => this.listeners.delete(fn);
+  }
+
+  private emit(): void {
+    for (const fn of this.listeners) fn(this.muted);
   }
 
   private unlock(): void {

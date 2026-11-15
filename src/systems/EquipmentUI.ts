@@ -99,11 +99,12 @@ export class EquipmentUI {
         ? 'player'
         : 'player_tex';
     this.previewAura = scene.add
-      .image(70, 132, scene.textures.exists('aura_tex') ? 'aura_tex' : lookKey)
+      .image(70, 126, scene.textures.exists('aura_tex') ? 'aura_tex' : lookKey)
       .setScrollFactor(0)
       .setVisible(false)
-      .setAlpha(0.55)
-      .setScale(2.4);
+      .setAlpha(0.7)
+      .setScale(1.35)
+      .setBlendMode(Phaser.BlendModes.ADD);
     this.preview = scene.add
       .sprite(70, 130, lookKey, 0)
       .setScrollFactor(0)

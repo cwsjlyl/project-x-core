@@ -55,7 +55,7 @@ export class ScienceUI {
       originY: 0
     }).setScrollFactor(0);
 
-    this.closeLabel = addUiText(scene, 448, 14, '關閉', {
+    this.closeLabel = addUiText(scene, 400, 14, '關閉', {
       size: 12,
       color: '#c9f6ff',
       originX: 1,

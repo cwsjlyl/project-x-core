@@ -13,6 +13,12 @@ export interface ItemEffects {
   bossDamageBonus?: number;
   invulnBonus?: number;
   doubleShot?: boolean;
+  spikeSafe?: boolean;
+  bulletScale?: number;
+  spreadShot?: boolean;
+  jumpBoost?: number;
+  shieldPeriod?: number;
+  shieldDuration?: number;
 }
 
 export interface EquipItem {
@@ -34,6 +40,12 @@ export interface DerivedStats {
   bossDamageBonus: number;
   invulnMs: number;
   doubleShot: boolean;
+  spikeSafe: boolean;
+  bulletScale: number;
+  spreadShot: boolean;
+  jumpBoost: number;
+  shieldPeriod: number;
+  shieldDuration: number;
 }
 
 export const ITEM_CATALOG: Record<string, EquipItem> = {
@@ -62,43 +74,43 @@ export const ITEM_CATALOG: Record<string, EquipItem> = {
     id: 'body_starter',
     name: '標準胸甲',
     kind: 'body',
-    description: '基礎防護，無特別效果。',
-    effects: {}
+    description: '輕便防護，生命上限 +4，受傷減少約 8%。',
+    effects: { maxHpBonus: 4, damageReduction: 0.08 }
   },
   body_energy: {
     id: 'body_energy',
     name: '動能胸甲',
     kind: 'body',
-    description: '受到傷害減少約 20%。',
-    effects: { damageReduction: 0.2 }
+    description: '踏中尖刺唔會受傷，受到傷害亦減少約 20%。',
+    effects: { damageReduction: 0.2, spikeSafe: true }
   },
   arms_starter: {
     id: 'arms_starter',
     name: '標準手砲',
     kind: 'arms',
-    description: '三段蓄力射擊（輕點／中蓄／滿蓄）。',
-    effects: {}
+    description: '三段蓄力射擊，炮彈稍為加大。',
+    effects: { bulletScale: 1.2 }
   },
   arms_rapid: {
     id: 'arms_rapid',
     name: '迅擊手臂',
     kind: 'arms',
-    description: '蓄力速度加快約 35%。',
-    effects: { chargeSpeed: 1.35 }
+    description: '蓄力速度加快約 35%，炮彈明顯加大。',
+    effects: { chargeSpeed: 1.35, bulletScale: 1.6 }
   },
   legs_starter: {
     id: 'legs_starter',
     name: '標準腿甲',
     kind: 'legs',
-    description: '可在地面或牆上發動衝刺。',
-    effects: {}
+    description: '可在地面或牆上發動衝刺，跳躍稍高。',
+    effects: { jumpBoost: 20 }
   },
   legs_airdash: {
     id: 'legs_airdash',
     name: '空躍腿甲',
     kind: 'legs',
-    description: '每次跳躍可進行一次空中衝刺。',
-    effects: { canAirDash: true }
+    description: '每次跳躍可進行一次空中衝刺，而且跳得更高。',
+    effects: { canAirDash: true, jumpBoost: 60 }
   },
   body_leaf: {
     id: 'body_leaf',
@@ -111,15 +123,15 @@ export const ITEM_CATALOG: Record<string, EquipItem> = {
     id: 'arms_frost',
     name: '霜牙手臂',
     kind: 'arms',
-    description: '擊敗霜原巨熊後獲得。攻擊 +5，蓄力稍快。',
-    effects: { atkBonus: 5, chargeSpeed: 1.15 }
+    description: '擊敗霜原巨熊後獲得。三向擴散射擊，攻擊 +5，蓄力稍快。',
+    effects: { atkBonus: 5, chargeSpeed: 1.15, spreadShot: true }
   },
   legs_sand: {
     id: 'legs_sand',
     name: '炎砂腿甲',
     kind: 'legs',
-    description: '擊敗炎砂巨蜥後獲得。可空中衝刺，生命上限 +10。',
-    effects: { canAirDash: true, maxHpBonus: 10 }
+    description: '擊敗炎砂巨蜥後獲得。可空中衝刺，跳得更高，生命上限 +10。',
+    effects: { canAirDash: true, maxHpBonus: 10, jumpBoost: 60 }
   },
   chip_charge: {
     id: 'chip_charge',
@@ -146,8 +158,8 @@ export const ITEM_CATALOG: Record<string, EquipItem> = {
     id: 'chip_iframe',
     name: '閃避晶片',
     kind: 'chip',
-    description: '被動：受傷後無敵時間延長。',
-    effects: { invulnBonus: 400 }
+    description: '隔數秒產生短暫防護膜，受傷後無敵時間亦較長。',
+    effects: { invulnBonus: 400, shieldPeriod: 7000, shieldDuration: 1400 }
   },
   chip_double: {
     id: 'chip_double',
@@ -272,6 +284,12 @@ export class EquipmentSystem {
     let bossDamageBonus = 0;
     let invulnMs = 800;
     let doubleShot = false;
+    let spikeSafe = false;
+    let bulletScale = 1;
+    let spreadShot = false;
+    let jumpBoost = 0;
+    let shieldPeriod = 0;
+    let shieldDuration = 0;
 
     for (const id of ids) {
       const item = this.getItem(id);
@@ -289,6 +307,14 @@ export class EquipmentSystem {
       bossDamageBonus += e.bossDamageBonus ?? 0;
       invulnMs += e.invulnBonus ?? 0;
       if (e.doubleShot) doubleShot = true;
+      if (e.spikeSafe) spikeSafe = true;
+      if (e.bulletScale) bulletScale *= e.bulletScale;
+      if (e.spreadShot) spreadShot = true;
+      jumpBoost += e.jumpBoost ?? 0;
+      if (e.shieldPeriod && e.shieldPeriod > 0) {
+        shieldPeriod = shieldPeriod > 0 ? Math.min(shieldPeriod, e.shieldPeriod) : e.shieldPeriod;
+        shieldDuration = Math.max(shieldDuration, e.shieldDuration ?? 0);
+      }
     }
 
     const num = (v: number, fallback = 0): number =>
@@ -303,7 +329,13 @@ export class EquipmentSystem {
       regenPerSecond: num(regenPerSecond),
       bossDamageBonus: num(bossDamageBonus, 0),
       invulnMs: num(invulnMs, 800) || 800,
-      doubleShot
+      doubleShot,
+      spikeSafe,
+      bulletScale: Math.min(2.2, Math.max(0.6, num(bulletScale, 1) || 1)),
+      spreadShot,
+      jumpBoost: Math.min(80, Math.max(0, num(jumpBoost))),
+      shieldPeriod: Math.max(0, num(shieldPeriod)),
+      shieldDuration: Math.max(0, num(shieldDuration))
     };
   }
 

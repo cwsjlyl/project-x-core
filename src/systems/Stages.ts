@@ -60,7 +60,7 @@ export const STAGES: Record<StageId, StageDef> = {
     rewardName: '潮汐甲盔',
     next: 'forest',
     requiresStations: true,
-    intro: '陽光沙灘　—　先探學習站，再挑戰潮汐巨蟹'
+    intro: '陽光沙灘　—　要完成全部學習站才可挑戰首領'
   },
   forest: {
     id: 'forest',
