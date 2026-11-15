@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { addUiText, type UiText } from './UiText';
+import { gameAudio } from './Audio';
 import {
   TOPIC_BY_ID,
   pickQuestion,
@@ -297,6 +298,7 @@ export class ScienceUI {
       } else {
         extra = '答對喇！電擊會令首領暫停。';
       }
+      if (!this.bossMode) gameAudio.play('correct');
       this.feedbackText.setColor('#8ffff4');
       this.feedbackText.setText(`${q.explain} ${extra}`);
       speakTerm(q.speak);
@@ -324,6 +326,7 @@ export class ScienceUI {
         let extra = '';
         if (justCleared || remaining <= 0) extra = '呢個學習站完成啦。';
         else extra = '仲有一題。';
+        gameAudio.play('wrong');
         this.feedbackText.setText(`答錯喇！${q.hint}　${extra}`);
         this.continueLabel.setText('繼續探索');
         this.setContinueVisible(true);
