@@ -7279,6 +7279,11 @@
               "name": "patrolMax",
               "type": "int",
               "value": 414
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "crab"
             }
           ]
         },
@@ -7302,6 +7307,11 @@
               "name": "patrolMax",
               "type": "int",
               "value": 720
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "gull"
             }
           ]
         },
@@ -7325,6 +7335,11 @@
               "name": "patrolMax",
               "type": "int",
               "value": 1134
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "puppy"
             }
           ]
         },
@@ -7348,6 +7363,11 @@
               "name": "patrolMax",
               "type": "int",
               "value": 1422
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "crab"
             }
           ]
         },
@@ -7371,6 +7391,11 @@
               "name": "patrolMax",
               "type": "int",
               "value": 1908
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "gull"
             }
           ]
         },
@@ -7394,6 +7419,11 @@
               "name": "patrolMax",
               "type": "int",
               "value": 2250
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "puppy"
             }
           ]
         },
