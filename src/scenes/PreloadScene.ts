@@ -40,7 +40,6 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('bg_far', 'assets/bg/far.png');
     this.load.image('bg_mid', 'assets/bg/mid.png');
     this.load.image('bg_sun', 'assets/bg/sun.png');
-    this.load.image('bg_scanline', 'assets/bg/scanline.png');
     this.load.image('hud_frame', 'assets/ui/hud_frame.png');
     this.load.image('hud_badge', 'assets/ui/hud_badge.png');
     this.load.image('spark_tex', 'assets/ui/spark.png');
@@ -49,11 +48,17 @@ export class PreloadScene extends Phaser.Scene {
       frameWidth: 48,
       frameHeight: 64
     });
+    this.load.spritesheet('animals', 'assets/sprites/animals.png', {
+      frameWidth: 24,
+      frameHeight: 24
+    });
+    this.load.image('boss', 'assets/sprites/boss.png');
   }
 
   create(): void {
     this.bakePixelTextures();
     this.createPlayerAnims();
+    this.createAnimalAnims();
     void this.startWhenReady();
   }
 
@@ -82,6 +87,22 @@ export class PreloadScene extends Phaser.Scene {
     mk('player-dash', [{ key: 'player', frame: 5 }], 1, -1);
     mk('player-shoot', [{ key: 'player', frame: 6 }], 1, -1);
     mk('player-wall', [{ key: 'player', frame: 7 }], 1, -1);
+  }
+
+  private createAnimalAnims(): void {
+    if (!this.textures.exists('animals')) return;
+    const mk = (key: string, start: number, end: number): void => {
+      if (this.anims.exists(key)) return;
+      this.anims.create({
+        key,
+        frames: this.anims.generateFrameNumbers('animals', { start, end }),
+        frameRate: 4,
+        repeat: -1
+      });
+    };
+    mk('animal-crab', 0, 1);
+    mk('animal-gull', 2, 3);
+    mk('animal-puppy', 4, 5);
   }
 
   /** Bake original pixel textures into the Texture Manager (no ripped sprites). */
@@ -128,7 +149,7 @@ export class PreloadScene extends Phaser.Scene {
     g.generateTexture('buster_tex', 12, 8);
     g.clear();
 
-    // 4. Patrol sentry (22x22)
+    // 4. Fallback patrol (22x22), used only if the animal sheet is missing
     g.fillStyle(0xd9383a);
     g.fillRect(2, 4, 18, 14);
     g.fillStyle(0xffcc00);
@@ -140,7 +161,7 @@ export class PreloadScene extends Phaser.Scene {
     g.generateTexture('enemy_tex', 22, 22);
     g.clear();
 
-    // 5. Thunder Rhino boss (64x48) — original animal-mech
+    // 5. Fallback boss (64x48), used only if the beach-crab sprite is missing
     g.fillStyle(0x3a4658);
     g.fillRect(14, 16, 40, 22);
     g.fillStyle(0x2a3344);

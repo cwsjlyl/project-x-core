@@ -6,10 +6,11 @@ import { EquipmentUI } from '../systems/EquipmentUI';
 import { GameInput } from '../systems/GameInput';
 import { loadStage, type StageData } from '../systems/MapLoader';
 import { TouchControls } from '../systems/TouchControls';
-import { addUiText } from '../systems/UiText';
+import { addUiText, type UiText } from '../systems/UiText';
 import { GameHud } from '../systems/Hud';
 import { ScienceProgress, TOPIC_BY_ID, type TopicId } from '../systems/ScienceBank';
 import { ScienceUI } from '../systems/ScienceUI';
+import { BOSS_NAME } from '../constants';
 
 interface EnemySprite extends Phaser.Physics.Arcade.Sprite {
   hp: number;
@@ -36,11 +37,11 @@ export class GameScene extends Phaser.Scene {
   private pickups!: Phaser.Physics.Arcade.Group;
   private playerLight: Phaser.GameObjects.Light | null = null;
   private hud!: GameHud;
-  private controlHint!: Phaser.GameObjects.Text;
-  private messageText!: Phaser.GameObjects.Text;
+  private controlHint!: UiText;
+  private messageText!: UiText;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBarFill!: Phaser.GameObjects.Rectangle;
-  private bossBarLabel!: Phaser.GameObjects.Text;
+  private bossBarLabel!: UiText;
   private gameInput = new GameInput();
   private equipment = new EquipmentSystem();
   private equipUI!: EquipmentUI;
@@ -48,7 +49,7 @@ export class GameScene extends Phaser.Scene {
   private science = new ScienceProgress();
   private scienceUI!: ScienceUI;
   private stationGroup!: Phaser.Physics.Arcade.StaticGroup;
-  private stationHint!: Phaser.GameObjects.Text;
+  private stationHint!: UiText;
   private nearbyTopic: TopicId | null = null;
   private readonly autoOpened = new Set<TopicId>();
   private useLights = false;
@@ -198,7 +199,7 @@ export class GameScene extends Phaser.Scene {
       () => this.touch.setPaused(false)
     );
 
-    this.showBanner('工業迴廊　—　先探學習站，再挑戰雷霆犀', 2800);
+    this.showBanner(`陽光沙灘　—　先探學習站，再挑戰${BOSS_NAME}`, 2800);
     if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('preview') === 'science') {
       this.openSciencePreview('sound');
     }
@@ -294,7 +295,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryEnableLights(): boolean {
-    // Outdoor dusk stage: skip Light2D gloom so sunset colours stay warm.
+    // Sunny beach: skip Light2D gloom so colours stay bright.
     // The photo hero must also stay off the Light2D pipeline.
     return false;
   }
@@ -310,16 +311,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnMappedEnemies(): void {
-    for (const zone of this.stage.enemies) {
-      const enemy = this.enemies.create(zone.x, zone.y, 'enemy_tex') as EnemySprite;
-      this.applyLight(enemy);
+    const kinds: Array<{ key: string; frame: number }> = [
+      { key: 'animal-crab', frame: 0 },
+      { key: 'animal-gull', frame: 2 },
+      { key: 'animal-puppy', frame: 4 }
+    ];
+    const useAnimals = this.textures.exists('animals');
+    this.stage.enemies.forEach((zone, i) => {
+      const kind = kinds[i % kinds.length];
+      const texture = useAnimals ? 'animals' : 'enemy_tex';
+      const enemy = this.enemies.create(zone.x, zone.y, texture, useAnimals ? kind.frame : undefined) as EnemySprite;
+      // Do not apply Light2D — it would muddy the animal colours.
       enemy.setCollideWorldBounds(true);
       enemy.setDepth(9);
       enemy.hp = 45;
       enemy.patrolMin = zone.patrolMin;
       enemy.patrolMax = zone.patrolMax;
       enemy.setVelocityX(55);
-    }
+      if (useAnimals && this.anims.exists(kind.key)) {
+        enemy.play(kind.key, true);
+      }
+    });
   }
 
   private spawnMappedPickups(): void {
@@ -389,7 +401,7 @@ export class GameScene extends Phaser.Scene {
       body.top <= d.y + d.height;
     if (touching && this.doorHintCooldown <= 0) {
       const left = this.science.totalStations - this.science.clearedCount;
-      this.showBanner(`仲有 ${left} 個學習站未完成，完成後先挑戰雷霆犀啦！`, 2400);
+      this.showBanner(`仲有 ${left} 個學習站未完成，完成後先挑戰${BOSS_NAME}啦！`, 2400);
       this.doorHintCooldown = 2800;
     }
   }
@@ -466,7 +478,7 @@ export class GameScene extends Phaser.Scene {
     this.refreshStationLooks();
     if (this.science.allCleared && !this.fightLocked) {
       this.doorBlocker.disableBody(true, true);
-      this.showBanner('五個學習站都完成喇！可以去挑戰雷霆犀。', 2800);
+      this.showBanner(`五個學習站都完成喇！可以去挑戰${BOSS_NAME}。`, 2800);
     }
   }
 
@@ -493,7 +505,7 @@ export class GameScene extends Phaser.Scene {
     const a = this.stage.arena;
     this.cameras.main.setBounds(a.x, a.y, a.width, a.height);
     this.boss.startFight();
-    this.showBanner('雷霆犀　降臨', 1800);
+    this.showBanner(`${BOSS_NAME}　降臨`, 1800);
     this.bossBarBg.setVisible(true);
     this.bossBarFill.setVisible(true);
     this.bossBarLabel.setVisible(true);
@@ -507,7 +519,7 @@ export class GameScene extends Phaser.Scene {
     const leveled = this.player.gainExp(200);
     const granted = this.equipment.grant('helm_thunder');
     const bits = ['關卡清除！'];
-    if (granted) bits.push('獲得：雷霆角盔');
+    if (granted) bits.push('獲得：潮汐甲盔');
     if (leveled) bits.push('LEVEL UP!');
     this.showBanner(bits.join('　'), 6000);
     this.messageText.setText(bits.join('\n'));
@@ -671,7 +683,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(220)
       .setVisible(false);
 
-    this.messageText = addUiText(this, 240, 54, '', {
+    this.messageText = addUiText(this, 240, 72, '', {
       size: 12,
       color: '#fff3a0',
       originX: 0.5,
@@ -695,7 +707,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(211)
       .setVisible(false);
-    this.bossBarLabel = addUiText(this, 240, 8, '雷霆犀', {
+    this.bossBarLabel = addUiText(this, 240, 8, BOSS_NAME, {
       size: 12,
       color: '#ffe8a0',
       originX: 0.5,
@@ -716,15 +728,9 @@ export class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     this.skyLayer = this.add.tileSprite(0, 0, w, h, 'bg_sky').setOrigin(0, 0).setScrollFactor(0).setDepth(-30);
-    this.add.image(392, 128, 'bg_sun').setScrollFactor(0).setDepth(-25);
+    this.add.image(400, 48, 'bg_sun').setScrollFactor(0).setDepth(-25);
     this.farLayer = this.add.tileSprite(0, 0, w, h, 'bg_far').setOrigin(0, 0).setScrollFactor(0).setDepth(-20);
     this.midLayer = this.add.tileSprite(0, 0, w, h, 'bg_mid').setOrigin(0, 0).setScrollFactor(0).setDepth(-10);
-    this.add
-      .tileSprite(0, 0, w, h, 'bg_scanline')
-      .setOrigin(0, 0)
-      .setScrollFactor(0)
-      .setDepth(150)
-      .setAlpha(0.22);
     this.syncParallax();
   }
 
@@ -772,7 +778,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.boss?.fightStarted) return;
     const ratio = Math.max(0, this.boss.hp / this.boss.maxHp);
     this.bossBarFill.width = 200 * ratio;
-    const label = this.boss.defeated ? '雷霆犀　已擊破' : `雷霆犀　${this.boss.phaseLabel}`;
+    const label = this.boss.defeated ? `${BOSS_NAME}　已擊破` : `${BOSS_NAME}　${this.boss.phaseLabel}`;
     this.bossBarLabel.setText(label);
     if (this.boss.defeated) this.bossBarFill.setFillStyle(0x668088);
     else if (this.boss.phase === 3) this.bossBarFill.setFillStyle(0xff55cc);
