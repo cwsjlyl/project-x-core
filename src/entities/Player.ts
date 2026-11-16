@@ -50,6 +50,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private shieldLeft = 0;
   private stats: DerivedStats;
   private readonly usesSheet: boolean;
+  private surface: 'normal' | 'ice' | 'sand' = 'normal';
+  private iceVx = 0;
+
 
   constructor(
     scene: Phaser.Scene,
@@ -115,6 +118,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   /** 0..1 buster charge, for the CORE energy bar. */
   get chargeRatio(): number {
     return Math.min(1, this.chargeTime / 1100);
+  }
+
+  setSurface(kind: 'normal' | 'ice' | 'sand'): void {
+    this.surface = kind;
+    if (kind !== 'ice') this.iceVx = 0;
   }
 
   refreshLoadout(): void {
@@ -237,19 +245,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.wallKickLockTimer > 0) {
       this.wallKickLockTimer -= delta;
     } else {
-      const moveSpeed = this.isDashing ? (this.equipment.hasLegs() ? 270 : 200) : 145;
+      const baseSpeed = this.isDashing ? (this.equipment.hasLegs() ? 270 : 200) : 145;
+      const moveSpeed =
+        this.surface === 'sand' && onGround && !this.isDashing ? Math.round(baseSpeed * 0.48) : baseSpeed;
       if (input.left) {
         this.facing = -1;
         this.setFlipX(true);
         body.setVelocityX(-moveSpeed);
+        if (this.surface === 'ice' && onGround) this.iceVx = -moveSpeed;
       } else if (input.right) {
         this.facing = 1;
         this.setFlipX(false);
         body.setVelocityX(moveSpeed);
+        if (this.surface === 'ice' && onGround) this.iceVx = moveSpeed;
       } else if (this.isDashing && (onGround || this.dashTimer > 0)) {
         body.setVelocityX(this.facing * moveSpeed);
+        if (this.surface === 'ice' && onGround) this.iceVx = this.facing * moveSpeed;
       } else if (!this.isDashing) {
-        body.setVelocityX(0);
+        if (this.surface === 'ice' && onGround) {
+          this.iceVx *= 0.94;
+          if (Math.abs(this.iceVx) < 8) this.iceVx = 0;
+          body.setVelocityX(this.iceVx);
+        } else {
+          this.iceVx = 0;
+          body.setVelocityX(0);
+        }
       }
     }
 
