@@ -1,4 +1,24 @@
-export type TopicId = 'sound' | 'force' | 'magnet' | 'materials' | 'weather';
+import type { StageId } from './Stages';
+import { BIOME_QUESTIONS } from './ScienceBankBiomes';
+
+export type TopicId =
+  | 'sound'
+  | 'force'
+  | 'magnet'
+  | 'materials'
+  | 'weather'
+  | 'forest_life'
+  | 'forest_plants'
+  | 'forest_home'
+  | 'forest_care'
+  | 'polar_animals'
+  | 'polar_warm'
+  | 'polar_ice'
+  | 'polar_weather'
+  | 'desert_animals'
+  | 'desert_adapt'
+  | 'desert_water'
+  | 'desert_heat';
 
 export interface TopicInfo {
   id: TopicId;
@@ -22,12 +42,35 @@ export const TOPICS: TopicInfo[] = [
   { id: 'force', name: '齊心合力', stationLabel: '齊心合力學習站' },
   { id: 'magnet', name: '磁向南北', stationLabel: '磁向南北學習站' },
   { id: 'materials', name: '產品大解構', stationLabel: '產品大解構學習站' },
-  { id: 'weather', name: '天氣日記', stationLabel: '天氣日記學習站' }
+  { id: 'weather', name: '天氣日記', stationLabel: '天氣日記學習站' },
+  { id: 'forest_life', name: '林間動物', stationLabel: '林間動物學習站' },
+  { id: 'forest_plants', name: '綠色植物', stationLabel: '綠色植物學習站' },
+  { id: 'forest_home', name: '森林家園', stationLabel: '森林家園學習站' },
+  { id: 'forest_care', name: '愛護自然', stationLabel: '愛護自然學習站' },
+  { id: 'polar_animals', name: '極地動物', stationLabel: '極地動物學習站' },
+  { id: 'polar_warm', name: '保暖方法', stationLabel: '保暖方法學習站' },
+  { id: 'polar_ice', name: '冰雪觀察', stationLabel: '冰雪觀察學習站' },
+  { id: 'polar_weather', name: '寒冷天氣', stationLabel: '寒冷天氣學習站' },
+  { id: 'desert_animals', name: '沙漠動物', stationLabel: '沙漠動物學習站' },
+  { id: 'desert_adapt', name: '適應環境', stationLabel: '適應環境學習站' },
+  { id: 'desert_water', name: '珍惜食水', stationLabel: '珍惜食水學習站' },
+  { id: 'desert_heat', name: '炎熱天氣', stationLabel: '炎熱天氣學習站' }
 ];
 
 export const TOPIC_BY_ID: Record<TopicId, TopicInfo> = Object.fromEntries(
   TOPICS.map((t) => [t.id, t])
 ) as Record<TopicId, TopicInfo>;
+
+export const STAGE_TOPICS: Record<StageId, TopicId[]> = {
+  beach: ['sound', 'force', 'magnet', 'materials', 'weather'],
+  forest: ['forest_life', 'forest_plants', 'forest_home', 'forest_care'],
+  polar: ['polar_animals', 'polar_warm', 'polar_ice', 'polar_weather'],
+  desert: ['desert_animals', 'desert_adapt', 'desert_water', 'desert_heat']
+};
+
+export function topicsForStage(stageId: StageId): TopicId[] {
+  return STAGE_TOPICS[stageId];
+}
 
 /** 對齊校本 2627 學段二課題同生字，供課堂探索練習。 */
 export const SCIENCE_QUESTIONS: ScienceQuestion[] = [
@@ -511,7 +554,8 @@ export const SCIENCE_QUESTIONS: ScienceQuestion[] = [
     explain: '持續記錄先容易比較變化、找出規律，再嘗試預測天氣。',
     hint: '單日觀察都有用，一連串記錄就更清楚。',
     speak: '規律'
-  }
+  },
+  ...BIOME_QUESTIONS
 ];
 
 export function questionsFor(topic: TopicId): ScienceQuestion[] {
@@ -562,21 +606,9 @@ export class ScienceProgress {
   readonly clearedTopics = new Set<TopicId>();
   readonly answeredIds = new Set<string>();
   /** Correct answers at each station (points only). */
-  readonly topicCorrects: Record<TopicId, number> = {
-    sound: 0,
-    force: 0,
-    magnet: 0,
-    materials: 0,
-    weather: 0
-  };
+  readonly topicCorrects: Partial<Record<TopicId, number>> = {};
   /** Answered attempts per station topic (correct + incorrect). Cap is 2. */
-  readonly topicAttempts: Record<TopicId, number> = {
-    sound: 0,
-    force: 0,
-    magnet: 0,
-    materials: 0,
-    weather: 0
-  };
+  readonly topicAttempts: Partial<Record<TopicId, number>> = {};
 
   get clearedCount(): number {
     return this.clearedTopics.size;
@@ -586,8 +618,26 @@ export class ScienceProgress {
     return TOPICS.length;
   }
 
+  /** True only when every topic in the whole game is done (not used for a single stage door). */
   get allCleared(): boolean {
-    return this.clearedTopics.size >= TOPICS.length;
+    return TOPICS.every((t) => this.clearedTopics.has(t.id));
+  }
+
+  stageTopics(stageId: StageId): TopicId[] {
+    return topicsForStage(stageId);
+  }
+
+  stageClearedCount(stageId: StageId): number {
+    return this.stageTopics(stageId).filter((id) => this.clearedTopics.has(id)).length;
+  }
+
+  stageTotal(stageId: StageId): number {
+    return this.stageTopics(stageId).length;
+  }
+
+  isStageCleared(stageId: StageId): boolean {
+    const topics = this.stageTopics(stageId);
+    return topics.length > 0 && topics.every((id) => this.clearedTopics.has(id));
   }
 
   isCleared(topic: TopicId): boolean {

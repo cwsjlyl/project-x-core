@@ -81,8 +81,8 @@ export const STAGES: Record<StageId, StageDef> = {
     rewardId: 'body_leaf',
     rewardName: '翠葉胸甲',
     next: 'polar',
-    requiresStations: false,
-    intro: '翠影森林　—　小心林間小動物，再挑戰翠葉巨梟'
+    requiresStations: true,
+    intro: '翠影森林　—　要完成全部學習站才可挑戰首領'
   },
   polar: {
     id: 'polar',
@@ -104,8 +104,8 @@ export const STAGES: Record<StageId, StageDef> = {
     rewardId: 'arms_frost',
     rewardName: '霜牙手臂',
     next: 'desert',
-    requiresStations: false,
-    intro: '霜白極地　—　踏過冰雪，再挑戰霜原巨熊'
+    requiresStations: true,
+    intro: '霜白極地　—　要完成全部學習站才可挑戰首領'
   },
   desert: {
     id: 'desert',
@@ -127,8 +127,8 @@ export const STAGES: Record<StageId, StageDef> = {
     rewardId: 'legs_sand',
     rewardName: '炎砂腿甲',
     next: null,
-    requiresStations: false,
-    intro: '炎陽沙漠　—　最後一關，挑戰炎砂巨蜥'
+    requiresStations: true,
+    intro: '炎陽沙漠　—　要完成全部學習站才可挑戰首領'
   }
 };
 

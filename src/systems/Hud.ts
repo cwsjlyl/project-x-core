@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
 import type { ScienceProgress } from './ScienceBank';
 import { addUiText, type UiText } from './UiText';
+import type { StageId } from './Stages';
 
 /** Original slim left-side HUD. Inspired by classic handheld action games, not official art. */
 export class GameHud {
@@ -76,7 +77,7 @@ export class GameHud {
       .setDepth(depth + 2);
   }
 
-  update(player: Player, science: ScienceProgress): void {
+  update(player: Player, science: ScienceProgress, stageId?: StageId): void {
     const hpRatio = player.maxHp > 0 ? Phaser.Math.Clamp(player.hp / player.maxHp, 0, 1) : 0;
     this.hpFill.height = Math.max(0, Math.round(this.wellH * hpRatio));
     this.hpFill.setFillStyle(hpRatio <= 0.25 ? 0xff6670 : 0x3cf0ff);
@@ -86,8 +87,8 @@ export class GameHud {
     this.coreFill.setFillStyle(coreRatio >= 1 ? 0xfff3a0 : coreRatio >= 400 / 1100 ? 0x80d8ff : 0xffc24a);
 
     this.lvText.setText(`LV.${player.level}`);
-    this.infoText.setText(
-      `科學分 ${science.score}\n學習站 ${science.clearedCount}/${science.totalStations}`
-    );
+    const cleared = stageId ? science.stageClearedCount(stageId) : science.clearedCount;
+    const total = stageId ? science.stageTotal(stageId) : science.totalStations;
+    this.infoText.setText(`科學分 ${science.score}\n學習站 ${cleared}/${total}`);
   }
 }
