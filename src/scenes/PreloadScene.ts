@@ -536,5 +536,101 @@ export class PreloadScene extends Phaser.Scene {
       ctx.fillStyle = '#0a2018';
       ctx.fillRect(12, 18, 4, 8);
     });
+
+    canvas('pinecone_tex', 12, 16, (ctx) => {
+      ctx.fillStyle = '#6a3a1c';
+      ctx.beginPath();
+      ctx.moveTo(6, 1);
+      ctx.lineTo(11, 6);
+      ctx.lineTo(10, 15);
+      ctx.lineTo(2, 15);
+      ctx.lineTo(1, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#c08040';
+      ctx.fillRect(3, 5, 6, 2);
+      ctx.fillRect(4, 9, 4, 2);
+      ctx.fillStyle = '#e8c080';
+      ctx.fillRect(5, 3, 2, 2);
+    });
+
+    canvas('icicle_tex', 10, 18, (ctx) => {
+      ctx.fillStyle = '#b8e8ff';
+      ctx.beginPath();
+      ctx.moveTo(1, 1);
+      ctx.lineTo(9, 1);
+      ctx.lineTo(5, 17);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(4, 2, 2, 8);
+    });
+
+    canvas('snapplant_tex', 20, 18, (ctx) => {
+      ctx.fillStyle = '#2a5a28';
+      ctx.fillRect(8, 10, 4, 8);
+      ctx.fillStyle = '#4a9a40';
+      ctx.beginPath();
+      ctx.moveTo(1, 12);
+      ctx.lineTo(10, 2);
+      ctx.lineTo(19, 12);
+      ctx.lineTo(10, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#d06050';
+      ctx.fillRect(6, 7, 8, 3);
+      ctx.fillStyle = '#f0e0c0';
+      ctx.fillRect(7, 8, 2, 1);
+      ctx.fillRect(11, 8, 2, 1);
+    });
+
+    canvas('ice_tex', 18, 8, (ctx) => {
+      ctx.fillStyle = 'rgba(180, 230, 255, 0.7)';
+      ctx.fillRect(0, 1, 18, 6);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fillRect(0, 1, 18, 2);
+      ctx.fillStyle = 'rgba(120, 190, 230, 0.8)';
+      ctx.fillRect(0, 6, 18, 1);
+    });
+
+    canvas('sandsink_tex', 18, 8, (ctx) => {
+      ctx.fillStyle = '#c8a050';
+      ctx.fillRect(0, 1, 18, 6);
+      ctx.fillStyle = '#e8c878';
+      ctx.fillRect(2, 2, 4, 2);
+      ctx.fillRect(10, 3, 5, 2);
+      ctx.fillStyle = '#8a6830';
+      ctx.fillRect(0, 6, 18, 2);
+    });
+
+    canvas('heatvent_tex', 16, 20, (ctx) => {
+      ctx.fillStyle = '#6a2a18';
+      ctx.fillRect(2, 14, 12, 6);
+      ctx.fillStyle = '#d47830';
+      ctx.fillRect(4, 15, 8, 4);
+      ctx.fillStyle = 'rgba(255, 180, 60, 0.9)';
+      ctx.beginPath();
+      ctx.moveTo(8, 1);
+      ctx.lineTo(12, 12);
+      ctx.lineTo(8, 9);
+      ctx.lineTo(4, 12);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    canvas('tidespray_tex', 16, 20, (ctx) => {
+      ctx.fillStyle = '#3a6a88';
+      ctx.fillRect(2, 14, 12, 6);
+      ctx.fillStyle = '#7ec8e8';
+      ctx.fillRect(4, 15, 8, 4);
+      ctx.fillStyle = 'rgba(200, 240, 255, 0.9)';
+      ctx.beginPath();
+      ctx.moveTo(8, 1);
+      ctx.lineTo(12, 12);
+      ctx.lineTo(8, 9);
+      ctx.lineTo(4, 12);
+      ctx.closePath();
+      ctx.fill();
+    });
   }
 }

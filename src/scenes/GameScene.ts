@@ -12,7 +12,7 @@ import { GameHud } from '../systems/Hud';
 import { ScienceProgress, TOPIC_BY_ID, pickBossQuestion, type TopicId } from '../systems/ScienceBank';
 import { ScienceUI } from '../systems/ScienceUI';
 import { STAGES, isStageId, type StageDef, type StageId, type EnemyKind } from '../systems/Stages';
-import { STAGE_HAZARDS, SPIKE_TINT, MOVER_TINT, SPIKE_DAMAGE } from '../systems/Hazards';
+import { STAGE_HAZARDS, SPIKE_TINT, MOVER_TINT, SPIKE_DAMAGE, TRAP_DAMAGE } from '../systems/Hazards';
 import { finiteNumber, formatDamageText, isPositiveDamage } from '../systems/CombatMath';
 import { gameAudio } from '../systems/Audio';
 
@@ -81,6 +81,11 @@ export class GameScene extends Phaser.Scene {
   private spikeSafeHintCd = 0;
   private spikeGroup!: Phaser.Physics.Arcade.StaticGroup;
   private moverGroup!: Phaser.Physics.Arcade.Group;
+  private fallerGroup!: Phaser.Physics.Arcade.Group;
+  private chomperGroup!: Phaser.Physics.Arcade.Group;
+  private iceGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private sandGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private ventGroup!: Phaser.Physics.Arcade.Group;
   private doorSign: Phaser.GameObjects.Image | null = null;
   private doorSignLabel: UiText | null = null;
   private questHint: UiText | null = null;
@@ -185,7 +190,7 @@ export class GameScene extends Phaser.Scene {
     this.doorBlocker.setDisplaySize(this.stage.door.width, this.stage.door.height);
     this.doorBlocker.refreshBody();
     this.doorBlocker.setDepth(5);
-    if (!this.stageDef.requiresStations || this.science.allCleared) {
+    if (this.stationsSatisfied()) {
       this.doorBlocker.disableBody(true, true);
     } else {
       this.doorBlocker.setVisible(true);
@@ -286,7 +291,13 @@ export class GameScene extends Phaser.Scene {
         doorHint: () => this.debugDoorHint(),
         testSpike: (safe?: boolean) => this.debugTestSpike(!!safe),
         testMover: () => this.debugTestMover(),
-        warp: (x: number, y: number) => this.player.reviveAt(x, y)
+        warp: (x: number, y: number) => this.player.reviveAt(x, y),
+        scatterGear: () => this.debugScatterGear(),
+        forestStation: () => this.debugStageStation(),
+        forestBossHit: () => this.debugBossPersist(),
+        forestTraps: () => this.debugForestTraps(),
+        polarPath: () => this.debugPolarPath(),
+        desertPath: () => this.debugDesertPath()
       };
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -336,8 +347,10 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.refreshPlayerSurface();
     this.player.updatePlayer(delta);
     this.updateMovers();
+    this.updateBiomeHazards(delta);
     this.carryPlayerOnMover();
     if (this.playerLight) {
       this.playerLight.setPosition(this.player.x, this.player.y);
@@ -412,11 +425,22 @@ export class GameScene extends Phaser.Scene {
       stageId = registryStage as StageId;
     } else if (isStageId(debug)) {
       stageId = debug;
+    } else if (debug.startsWith('forest')) {
+      stageId = 'forest';
+    } else if (debug.startsWith('polar')) {
+      stageId = 'polar';
+    } else if (debug.startsWith('desert')) {
+      stageId = 'desert';
     }
     this.stageId = stageId;
     this.stageDef = STAGES[stageId];
     if (saved?.equipment) this.equipment = saved.equipment;
     if (saved?.science) this.science = saved.science;
+  }
+
+  /** This stage's own stations are done (or the stage does not require them). */
+  private stationsSatisfied(): boolean {
+    return !this.stageDef.requiresStations || this.science.isStageCleared(this.stageId);
   }
 
   private captureRun(): RunState {
@@ -514,19 +538,22 @@ export class GameScene extends Phaser.Scene {
 
   private checkBossTrigger(): void {
     if (this.fightLocked || this.battleClear) return;
-    if (this.stageDef.requiresStations && !this.science.allCleared) return;
-    const t = this.stage.trigger;
+    if (!this.stationsSatisfied()) return;
+    const a = this.stage.arena;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const px = body.center.x;
     const py = body.center.y;
-    if (px >= t.x && px <= t.x + t.width && py >= t.y && py <= t.y + t.height) {
+    // Use the whole arena, not only the 18px door strip — later stages used to
+    // leave the door open, so shots from just outside did nothing because the
+    // fight had not started.
+    if (px >= a.x - 4 && px <= a.x + a.width && py >= a.y && py <= a.y + a.height) {
       this.beginBossFight();
     }
   }
 
   private updateDoorLock(delta: number): void {
     if (this.doorHintCooldown > 0) this.doorHintCooldown -= delta;
-    const unlocked = !this.stageDef.requiresStations || this.science.allCleared;
+    const unlocked = this.stationsSatisfied();
     if (unlocked) {
       if (!this.fightLocked && this.doorBlocker.active) {
         this.doorBlocker.disableBody(true, true);
@@ -546,7 +573,7 @@ export class GameScene extends Phaser.Scene {
       body.bottom >= d.y &&
       body.top <= d.y + d.height;
     if (touching && this.doorHintCooldown <= 0) {
-      const left = this.science.totalStations - this.science.clearedCount;
+      const left = this.science.stageTotal(this.stageId) - this.science.stageClearedCount(this.stageId);
       this.showBanner(`仲有 ${left} 個學習站未完成，完成後先挑戰${this.stageDef.bossName}啦！`, 2400);
       this.doorHintCooldown = 2800;
     }
@@ -632,11 +659,12 @@ export class GameScene extends Phaser.Scene {
   private onScienceProgress(): void {
     this.updateHud();
     this.refreshStationLooks();
-    if (this.science.allCleared && this.stageDef.requiresStations && !this.fightLocked) {
+    if (this.science.isStageCleared(this.stageId) && this.stageDef.requiresStations && !this.fightLocked) {
       this.doorBlocker.disableBody(true, true);
       this.refreshDoorSign();
       this.refreshQuestHint();
-      this.showBanner(`五個學習站都完成喇！可以去挑戰${this.stageDef.bossName}。`, 2800);
+      const n = this.science.stageTotal(this.stageId);
+      this.showBanner(`呢關 ${n} 個學習站都完成喇！可以去挑戰${this.stageDef.bossName}。`, 2800);
     }
   }
 
@@ -776,7 +804,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onBulletHitBoss(bullet: Phaser.Physics.Arcade.Sprite): void {
-    if (!this.asPlayerBullet(bullet) || !bullet.active || !this.boss.fightStarted) return;
+    if (!this.asPlayerBullet(bullet) || !bullet.active) return;
+    if (!this.boss.fightStarted) {
+      if (!this.stationsSatisfied() || this.player.x < this.stage.arena.x - 80) return;
+      this.beginBossFight();
+      this.boss.clearInvuln();
+    }
     if (this.boss.defeated) {
       this.recycleBullet(bullet);
       return;
@@ -1088,6 +1121,7 @@ export class GameScene extends Phaser.Scene {
       else body.setVelocity(0, m.speed);
     }
     this.physics.add.collider(this.player, this.moverGroup);
+    this.spawnBiomeHazards();
   }
 
   private onSpikeHit(): void {
@@ -1176,7 +1210,7 @@ export class GameScene extends Phaser.Scene {
 
   private refreshDoorSign(): void {
     if (!this.doorSign || !this.doorSignLabel) return;
-    const open = !this.stageDef.requiresStations || this.science.allCleared;
+    const open = this.stationsSatisfied();
     const openKey = this.textures.exists('door_sign_open_tex') ? 'door_sign_open_tex' : 'door_sign_tex';
     const lockKey = this.textures.exists('door_sign_tex') ? 'door_sign_tex' : 'door_block_tex';
     this.doorSign.setTexture(open ? openKey : lockKey);
@@ -1190,7 +1224,7 @@ export class GameScene extends Phaser.Scene {
       this.questHint.setVisible(false);
       return;
     }
-    if (this.science.allCleared) {
+    if (this.science.isStageCleared(this.stageId)) {
       this.questHint.setColor('#b8ffd0');
       this.questHint.setText('學習站已完成，可以挑戰首領');
       this.questHint.setVisible(true);
@@ -1280,7 +1314,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    this.hud.update(this.player, this.science);
+    this.hud.update(this.player, this.science, this.stageId);
   }
 
   private createAtmosphere(): void {
@@ -1440,6 +1474,28 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(240, () => this.debugGearFx());
     } else if (debug === 'door-hint') {
       this.time.delayedCall(200, () => this.debugDoorHint());
+    } else if (debug === 'scatter-gear' || debug === 'beach-spawn') {
+      this.time.delayedCall(200, () => this.debugScatterGear());
+    } else if (
+      debug === 'forest-station' ||
+      debug === 'polar-station' ||
+      debug === 'desert-station' ||
+      debug === 'stage-station'
+    ) {
+      this.time.delayedCall(240, () => this.debugStageStation());
+    } else if (
+      debug === 'forest-boss' ||
+      debug === 'polar-boss' ||
+      debug === 'desert-boss' ||
+      debug === 'forest-boss-hit'
+    ) {
+      this.time.delayedCall(220, () => this.debugBossPersist());
+    } else if (debug === 'forest-traps') {
+      this.time.delayedCall(240, () => this.debugForestTraps());
+    } else if (debug === 'polar-path') {
+      this.time.delayedCall(200, () => this.debugPolarPath());
+    } else if (debug === 'desert-path') {
+      this.time.delayedCall(200, () => this.debugDesertPath());
     }
   }
 
@@ -1469,7 +1525,7 @@ export class GameScene extends Phaser.Scene {
   /** Preview hook: jump into the current stage's boss arena. */
   debugStartBoss(forceQuiz = false): void {
     if (this.stageDef.requiresStations) {
-      for (const topic of ['sound', 'force', 'magnet', 'materials', 'weather'] as TopicId[]) {
+      for (const topic of this.science.stageTopics(this.stageId)) {
         this.science.topicCorrects[topic] = 2;
         this.science.topicAttempts[topic] = 2;
         this.science.clearedTopics.add(topic);
@@ -1691,6 +1747,270 @@ export class GameScene extends Phaser.Scene {
     const top = first.y - first.displayHeight / 2;
     this.player.reviveAt(first.x, top - 18);
     return { onMover: true, x: first.x, y: first.y };
+  }
+
+  private spawnBiomeHazards(): void {
+    const pack = STAGE_HAZARDS[this.stageId];
+    this.fallerGroup = this.physics.add.group({ allowGravity: false });
+    this.chomperGroup = this.physics.add.group({ allowGravity: false, immovable: true });
+    this.iceGroup = this.physics.add.staticGroup();
+    this.sandGroup = this.physics.add.staticGroup();
+    this.ventGroup = this.physics.add.group({ allowGravity: false });
+
+    for (const f of pack.fallers) {
+      const key = f.kind === 'icicle'
+        ? (this.textures.exists('icicle_tex') ? 'icicle_tex' : 'pickup_tex')
+        : (this.textures.exists('pinecone_tex') ? 'pinecone_tex' : 'pickup_tex');
+      const spr = this.fallerGroup.create(f.x, f.y, key) as Phaser.Physics.Arcade.Sprite;
+      spr.setDepth(7);
+      spr.setData('kind', f.kind);
+      spr.setData('ox', f.x);
+      spr.setData('oy', f.y);
+      spr.setData('period', f.period);
+      spr.setData('timer', -f.delay);
+      spr.setData('state', 'wait');
+      const body = spr.body as Phaser.Physics.Arcade.Body;
+      body.setAllowGravity(false);
+      body.setSize(10, 12);
+    }
+    this.physics.add.overlap(this.player, this.fallerGroup, (_p, obj) => {
+      const spr = obj as Phaser.Physics.Arcade.Sprite;
+      if (spr.getData('state') !== 'fall') return;
+      this.hurtFromTrap(spr.x, spr.y - 8);
+    });
+
+    for (const c of pack.chompers) {
+      const key = this.textures.exists('snapplant_tex') ? 'snapplant_tex' : 'pickup_tex';
+      const spr = this.chomperGroup.create(c.x, c.surfaceY - 10, key) as Phaser.Physics.Arcade.Sprite;
+      spr.setDepth(6);
+      spr.setData('period', c.period);
+      spr.setData('openMs', c.openMs);
+      spr.setData('timer', -c.delay);
+      spr.setData('open', true);
+      const body = spr.body as Phaser.Physics.Arcade.Body;
+      body.setAllowGravity(false);
+      body.setImmovable(true);
+      body.setSize(16, 14);
+    }
+    this.physics.add.overlap(this.player, this.chomperGroup, (_p, obj) => {
+      const spr = obj as Phaser.Physics.Arcade.Sprite;
+      if (spr.getData('open')) return;
+      this.hurtFromTrap(spr.x, spr.y - 8);
+    });
+
+    const iceKey = this.textures.exists('ice_tex') ? 'ice_tex' : 'pickup_tex';
+    for (const ice of pack.ice) {
+      const tiles = Math.max(1, Math.round(ice.width / 18));
+      for (let i = 0; i < tiles; i++) {
+        const spr = this.iceGroup.create(ice.x + 9 + i * 18, ice.surfaceY - 4, iceKey) as Phaser.Physics.Arcade.Sprite;
+        spr.setDepth(5);
+        spr.refreshBody();
+      }
+    }
+
+    const sandKey = this.textures.exists('sandsink_tex') ? 'sandsink_tex' : 'pickup_tex';
+    for (const sand of pack.sands) {
+      const tiles = Math.max(1, Math.round(sand.width / 18));
+      for (let i = 0; i < tiles; i++) {
+        const spr = this.sandGroup.create(sand.x + 9 + i * 18, sand.surfaceY - 4, sandKey) as Phaser.Physics.Arcade.Sprite;
+        spr.setDepth(5);
+        spr.refreshBody();
+      }
+    }
+
+    for (const v of pack.vents) {
+      const key =
+        v.kind === 'tide'
+          ? this.textures.exists('tidespray_tex')
+            ? 'tidespray_tex'
+            : 'pickup_tex'
+          : this.textures.exists('heatvent_tex')
+            ? 'heatvent_tex'
+            : 'pickup_tex';
+      const spr = this.ventGroup.create(v.x, v.surfaceY - 10, key) as Phaser.Physics.Arcade.Sprite;
+      spr.setDepth(6);
+      spr.setData('period', v.period);
+      spr.setData('burstMs', v.burstMs);
+      spr.setData('timer', -v.delay);
+      spr.setData('state', 'idle');
+      spr.setData('kind', v.kind);
+      spr.setAlpha(0.85);
+      const body = spr.body as Phaser.Physics.Arcade.Body;
+      body.setAllowGravity(false);
+      body.setSize(12, 16);
+    }
+    this.physics.add.overlap(this.player, this.ventGroup, (_p, obj) => {
+      const spr = obj as Phaser.Physics.Arcade.Sprite;
+      if (spr.getData('state') !== 'burst') return;
+      this.hurtFromTrap(spr.x, spr.y - 10);
+    });
+  }
+
+  private hurtFromTrap(x: number, y: number): void {
+    if (this.player.dead || this.player.invulnerable) return;
+    this.player.takeDamage(TRAP_DAMAGE);
+    this.showFloatingText(x, y, `-${TRAP_DAMAGE}`, '#ff8866');
+  }
+
+  private refreshPlayerSurface(): void {
+    if (!this.player || this.player.dead) {
+      return;
+    }
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (!body) return;
+    let kind: 'normal' | 'ice' | 'sand' = 'normal';
+    const touching = (group?: Phaser.Physics.Arcade.StaticGroup): boolean => {
+      if (!group) return false;
+      let hit = false;
+      group.children.each((child) => {
+        const spr = child as Phaser.Physics.Arcade.Sprite;
+        const b = spr.body as Phaser.Physics.Arcade.StaticBody | undefined;
+        if (!spr.active || !b) return true;
+        const overlap =
+          body.right > b.left + 2 &&
+          body.left < b.right - 2 &&
+          body.bottom <= b.bottom + 6 &&
+          body.bottom >= b.top - 8;
+        if (overlap) hit = true;
+        return true;
+      });
+      return hit;
+    };
+    if (body.blocked.down && touching(this.iceGroup)) kind = 'ice';
+    else if (body.blocked.down && touching(this.sandGroup)) kind = 'sand';
+    this.player.setSurface(kind);
+  }
+
+  private updateBiomeHazards(delta: number): void {
+    if (this.fallerGroup) {
+      this.fallerGroup.children.each((child) => {
+        const spr = child as Phaser.Physics.Arcade.Sprite;
+        if (!spr.active) return true;
+        const body = spr.body as Phaser.Physics.Arcade.Body;
+        const period = finiteNumber(spr.getData('period'), 3000);
+        let timer = finiteNumber(spr.getData('timer'), 0) + delta;
+        let state = String(spr.getData('state') ?? 'wait');
+        const ox = finiteNumber(spr.getData('ox'), spr.x);
+        const oy = finiteNumber(spr.getData('oy'), spr.y);
+        if (state === 'wait') {
+          if (timer >= period) {
+            state = 'shake';
+            timer = 0;
+          }
+        } else if (state === 'shake') {
+          spr.x = ox + Math.sin(timer / 40) * 2;
+          if (timer >= 420) {
+            state = 'fall';
+            timer = 0;
+            spr.x = ox;
+            body.setAllowGravity(true);
+            body.setVelocity(0, 40);
+          }
+        } else if (state === 'fall') {
+          if (spr.y >= 230 || body.blocked.down) {
+            state = 'wait';
+            timer = 0;
+            body.setAllowGravity(false);
+            body.setVelocity(0, 0);
+            spr.setPosition(ox, oy);
+          }
+        }
+        spr.setData('timer', timer);
+        spr.setData('state', state);
+        return true;
+      });
+    }
+
+    if (this.chomperGroup) {
+      this.chomperGroup.children.each((child) => {
+        const spr = child as Phaser.Physics.Arcade.Sprite;
+        if (!spr.active) return true;
+        const period = finiteNumber(spr.getData('period'), 2600);
+        const openMs = finiteNumber(spr.getData('openMs'), 1400);
+        let timer = finiteNumber(spr.getData('timer'), 0) + delta;
+        if (timer < 0) {
+          spr.setData('timer', timer);
+          return true;
+        }
+        const cycle = timer % period;
+        const open = cycle < openMs;
+        spr.setData('open', open);
+        spr.setAlpha(open ? 0.85 : 1);
+        spr.setTint(open ? 0xb8ffb0 : 0xff8060);
+        spr.setScale(open ? 1 : 1.08);
+        spr.setData('timer', timer);
+        return true;
+      });
+    }
+
+    if (this.ventGroup) {
+      this.ventGroup.children.each((child) => {
+        const spr = child as Phaser.Physics.Arcade.Sprite;
+        if (!spr.active) return true;
+        const period = finiteNumber(spr.getData('period'), 2800);
+        const burstMs = finiteNumber(spr.getData('burstMs'), 700);
+        const telegraph = 450;
+        let timer = finiteNumber(spr.getData('timer'), 0) + delta;
+        if (timer < 0) {
+          spr.setData('timer', timer);
+          spr.setAlpha(0.55);
+          return true;
+        }
+        const cycle = timer % period;
+        let state = 'idle';
+        if (cycle >= period - telegraph - burstMs && cycle < period - burstMs) {
+          state = 'telegraph';
+          spr.setAlpha(0.7 + 0.3 * Math.sin(cycle / 50));
+          spr.setScale(1, 1.15);
+        } else if (cycle >= period - burstMs) {
+          state = 'burst';
+          spr.setAlpha(1);
+          spr.setScale(1, 1.8);
+        } else {
+          spr.setAlpha(0.7);
+          spr.setScale(1, 1);
+        }
+        spr.setData('state', state);
+        spr.setData('timer', timer);
+        const body = spr.body as Phaser.Physics.Arcade.Body;
+        if (state === 'burst') body.setSize(12, 28);
+        else body.setSize(12, 10);
+        return true;
+      });
+    }
+  }
+
+  debugScatterGear(): void {
+    this.player.reviveAt(this.stage.playerSpawn.x, this.stage.playerSpawn.y);
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(this.stage.playerSpawn.x + 40, 135);
+  }
+
+  debugStageStation(): void {
+    const station = this.stage.scienceStations[0];
+    if (!station) return;
+    const topic = station.topic as TopicId;
+    this.player.reviveAt(station.x, station.y);
+    this.panPreviewTo(station.x, 135);
+    this.time.delayedCall(80, () => this.openScienceStation(topic));
+  }
+
+  debugForestTraps(): void {
+    const pack = STAGE_HAZARDS[this.stageId];
+    const target = pack.chompers[0]?.x ?? pack.fallers[0]?.x ?? this.player.x;
+    this.player.reviveAt(target - 40, this.stage.playerSpawn.y);
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(target, 135);
+  }
+
+  debugPolarPath(): void {
+    this.player.reviveAt(1320, this.stage.playerSpawn.y);
+    this.panPreviewTo(1380, 135);
+  }
+
+  debugDesertPath(): void {
+    this.player.reviveAt(1320, this.stage.playerSpawn.y);
+    this.panPreviewTo(1380, 135);
   }
 
   debugEquipLook(alt: boolean): void {
