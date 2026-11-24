@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { addUiText, waitForUiFonts } from '../systems/UiText';
 import { ensureLookTexture } from '../systems/HeroLook';
 import { preloadSfx } from '../systems/Audio';
+import { bakeAzureTowerTextures } from '../systems/AzureTowerStack';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -105,6 +106,7 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     this.bakePixelTextures();
+    bakeAzureTowerTextures(this);
     ensureLookTexture(this);
     this.createPlayerAnims();
     this.createAnimalAnims();

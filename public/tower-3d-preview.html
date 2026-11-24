@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D 蒼藍能量塔 — Sprite Stacking 預覽與 PNG 匯出工具</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b121c;
+      --panel: #131f30;
+      --border: #25405e;
+      --accent: #00e5ff;
+      --text: #e6f7ff;
+      --muted: #8fb4cc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
+      background: radial-gradient(circle at 50% 25%, #162a42 0%, var(--bg) 70%);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px 32px;
+      gap: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      text-align: center;
+    }
+    p.sub {
+      margin: -8px 0 0;
+      font-size: 0.88rem;
+      color: var(--muted);
+      text-align: center;
+    }
+    .stage {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+      max-width: 560px;
+      width: 100%;
+    }
+    canvas#preview {
+      width: 240px;
+      height: 360px;
+      image-rendering: pixelated;
+      background: repeating-conic-gradient(#101a28 0% 25%, #162436 0% 50%) 50% / 20px 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: grab;
+      touch-action: none;
+    }
+    .controls, .exports {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      width: 100%;
+    }
+    label {
+      font-size: 0.84rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(10, 18, 28, 0.65);
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #1e344d;
+    }
+    button {
+      background: #17344f;
+      color: var(--text);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 8px 13px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.15s;
+    }
+    button:hover { background: #1e496e; }
+    button:active { transform: scale(0.97); }
+    button.primary {
+      background: #00b8d9;
+      color: #06131f;
+    }
+    button.primary:hover { background: #33dcff; }
+  </style>
+</head>
+<body>
+  <h1>⚡ 3D 蒼藍能量塔（Sprite Stacking 2.5D）</h1>
+  <p class="sub">支援滑鼠／手指左右拖曳 360° 旋轉，或一鍵下載透明 PNG 加入其他遊戲</p>
+
+  <div class="stage">
+    <canvas id="preview" width="40" height="60"></canvas>
+
+    <div class="controls">
+      <label>
+        <input type="checkbox" id="autoSpin" checked /> 自動旋轉
+      </label>
+      <label>
+        <input type="checkbox" id="activeMode" checked /> 充能發光態
+      </label>
+      <label>
+        俯視壓縮
+        <input type="range" id="squash" min="0.45" max="0.95" step="0.01" value="0.72" />
+      </label>
+    </div>
+
+    <div class="exports">
+      <button class="primary" id="dlSheet">下載 24 方向精靈圖 (PNG)</button>
+      <button id="dlSlices">下載 42 層切片長條圖 (slices.png)</button>
+      <button id="dlFrame">下載當前角度高清 3D 圖 (PNG)</button>
+    </div>
+  </div>
+
+  <script>
+    const SLICE_SIZE = 24, SLICE_COUNT = 42, FRAME_W = 40, FRAME_H = 60;
+    const half = (SLICE_SIZE - 1) * 0.5;
+
+    function buildVolume(active) {
+      const total = SLICE_COUNT * SLICE_SIZE * SLICE_SIZE;
+      const vol = { rgba: new Uint8Array(total * 4), emissive: new Uint8Array(total), normals: new Float32Array(total * 3) };
+      const setV = (x, y, z, r, g, b, em = false) => {
+        const idx = z * SLICE_SIZE * SLICE_SIZE + y * SLICE_SIZE + x;
+        const o = idx * 4;
+        vol.rgba[o] = r; vol.rgba[o+1] = g; vol.rgba[o+2] = b; vol.rgba[o+3] = 255;
+        vol.emissive[idx] = em ? 1 : 0;
+      };
+      const coreOuter = active ? [0, 180, 255] : [26, 86, 124];
+      const coreMid = active ? [110, 242, 255] : [52, 138, 178];
+      const coreHot = active ? [240, 255, 255] : [130, 210, 235];
+      const trimGlow = active ? [0, 229, 255] : [48, 128, 160];
+
+      for (let z = 0; z < SLICE_COUNT; z++) {
+        for (let y = 0; y < SLICE_SIZE; y++) {
+          for (let x = 0; x < SLICE_SIZE; x++) {
+            const dx = x - half, dy = y - half, adx = Math.abs(dx), ady = Math.abs(dy);
+            const dist = Math.hypot(dx, dy), oct = Math.max(adx, ady) + 0.42 * Math.min(adx, ady);
+            if (z <= 5) {
+              const lim = z <= 2 ? 9.4 : 7.8;
+              const foot = z <= 2 && ((adx <= 2.1 && ady <= 11.2) || (ady <= 2.1 && adx <= 11.2));
+              if (oct <= lim || foot) {
+                if (z === 2 && foot && Math.max(adx, ady) >= 9.2) setV(x, y, z, ...trimGlow, active);
+                else if (z === 0) setV(x, y, z, 18, 27, 40);
+                else if (z === 5 && oct <= 6.8 && oct >= 5.4) setV(x, y, z, ...trimGlow, active);
+                else if ((z === 2 || z === 4) && oct >= lim - 1.2) setV(x, y, z, 62, 90, 122);
+                else setV(x, y, z, 36, 54, 76);
+              }
+            } else if (z <= 25) {
+              if (dist <= 3.2) {
+                if (dist <= 1.3) setV(x, y, z, ...coreHot, true);
+                else if (dist <= 2.3 || (z + x + y) % 3 === 0) setV(x, y, z, ...coreMid, true);
+                else setV(x, y, z, ...coreOuter, active);
+              } else if (((z === 12 || z === 13) || (z === 19 || z === 20)) && dist >= 4.8 && dist <= 7.7) {
+                const lo = z <= 13;
+                const node = (lo && Math.abs(dx) > 4.2 && ady <= 1.8) || (!lo && Math.abs(dy) > 4.2 && adx <= 1.8);
+                if (node) setV(x, y, z, ...coreHot, true);
+                else if (dist >= 6.6) setV(x, y, z, ...trimGlow, active);
+                else setV(x, y, z, 52, 76, 104);
+              } else if (adx >= 4.1 && ady >= 4.1 && adx <= 6.7 && ady <= 6.7) {
+                if (z === 9 || z === 16 || z === 23) setV(x, y, z, ...trimGlow, active);
+                else if (adx >= 5.6 || ady >= 5.6) setV(x, y, z, 72, 102, 134);
+                else setV(x, y, z, 40, 58, 82);
+              }
+            } else if (z <= 31) {
+              if (z <= 28) {
+                const capR = z === 26 ? 7.6 : z === 27 ? 6.8 : 5.6;
+                if (oct <= capR) {
+                  if (dist <= 2.4) setV(x, y, z, ...coreHot, true);
+                  else if (z === 27 && oct >= 5.6) setV(x, y, z, ...trimGlow, active);
+                  else setV(x, y, z, 58, 84, 114);
+                }
+              } else {
+                const sh = (z - 29) * 0.5;
+                if ((adx <= 1.5 && ady >= 4.6 + sh && ady <= 7.2 + sh) || (ady <= 1.5 && adx >= 4.6 + sh && adx <= 7.2 + sh)) {
+                  if (z === 31) setV(x, y, z, ...coreMid, true);
+                  else setV(x, y, z, 76, 108, 142);
+                }
+              }
+            } else if (z >= 33 && z <= 40) {
+              const span = 4.2 - Math.abs(z - 36.5) * 1.05, dm = adx + ady;
+              if (span > 0 && dm <= span) {
+                if (dm <= span * 0.38) setV(x, y, z, 255, 255, 255, true);
+                else if (dm <= span * 0.72) setV(x, y, z, ...coreMid, true);
+                else setV(x, y, z, ...coreOuter, true);
+              }
+            }
+          }
+        }
+      }
+      for (let z = 0; z < SLICE_COUNT; z++) for (let y = 0; y < SLICE_SIZE; y++) for (let x = 0; x < SLICE_SIZE; x++) {
+        const idx = z * SLICE_SIZE * SLICE_SIZE + y * SLICE_SIZE + x;
+        if (!vol.rgba[idx * 4 + 3]) continue;
+        let nx = 0, ny = 0, nz = 0;
+        for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy && !dz) continue;
+          const qx = x + dx, qy = y + dy, qz = z + dz;
+          if (qx < 0 || qx >= SLICE_SIZE || qy < 0 || qy >= SLICE_SIZE || qz < 0 || qz >= SLICE_COUNT || !vol.rgba[(qz * SLICE_SIZE * SLICE_SIZE + qy * SLICE_SIZE + qx) * 4 + 3]) {
+            nx += dx; ny += dy; nz += dz;
+          }
+        }
+        const l = Math.hypot(nx, ny, nz) || 1;
+        vol.normals[idx * 3] = nx / l; vol.normals[idx * 3 + 1] = ny / l; vol.normals[idx * 3 + 2] = nz / l;
+      }
+      return vol;
+    }
+
+    function renderFrame(vol, angle, squash, out) {
+      out.fill(0);
+      const cos = Math.cos(-angle), sin = Math.sin(-angle), cx = FRAME_W * 0.5, baseY = FRAME_H - 11;
+      const lx = -0.58 * cos - (-0.52) * sin, ly = -0.58 * sin + (-0.52) * cos, lz = 0.63;
+      for (let z = 0; z < SLICE_COUNT; z++) {
+        const lyc = baseY - z, zOff = z * SLICE_SIZE * SLICE_SIZE;
+        for (let py = 0; py < FRAME_H; py++) {
+          const dy = (py + 0.5 - lyc) / squash;
+          if (Math.abs(dy) > 18) continue;
+          for (let px = 0; px < FRAME_W; px++) {
+            const dx = px + 0.5 - cx;
+            const sx = Math.round(dx * cos - dy * sin + half), sy = Math.round(dx * sin + dy * cos + half);
+            if (sx < 0 || sx >= SLICE_SIZE || sy < 0 || sy >= SLICE_SIZE) continue;
+            const vIdx = zOff + sy * SLICE_SIZE + sx, cOff = vIdx * 4;
+            if (!vol.rgba[cOff + 3]) continue;
+            let r = vol.rgba[cOff], g = vol.rgba[cOff + 1], b = vol.rgba[cOff + 2];
+            if (vol.emissive[vIdx]) {
+              r = Math.min(255, r * 1.08 | 0); g = Math.min(255, g * 1.08 | 0); b = Math.min(255, b * 1.08 | 0);
+            } else {
+              const nOff = vIdx * 3;
+              const nd = vol.normals[nOff] * lx + vol.normals[nOff + 1] * ly + vol.normals[nOff + 2] * lz;
+              const sh = Math.max(0.45, Math.min(1.24, (0.68 + 0.48 * Math.max(-0.25, nd)) * (0.86 + 0.14 * z / SLICE_COUNT)));
+              r = Math.min(255, r * sh | 0); g = Math.min(255, g * sh | 0); b = Math.min(255, b * sh | 0);
+            }
+            const d = (py * FRAME_W + px) * 4;
+            out[d] = r; out[d + 1] = g; out[d + 2] = b; out[d + 3] = 255;
+          }
+        }
+      }
+    }
+
+    const vols = { active: buildVolume(true), standby: buildVolume(false) };
+    const cv = document.getElementById('preview'), ctx = cv.getContext('2d');
+    const img = ctx.createImageData(FRAME_W, FRAME_H);
+    let angle = 0.5, dragging = false, lastX = 0;
+
+    cv.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; cv.setPointerCapture(e.pointerId); document.getElementById('autoSpin').checked = false; });
+    cv.addEventListener('pointermove', (e) => { if (!dragging) return; angle += (e.clientX - lastX) * 0.025; lastX = e.clientX; });
+    cv.addEventListener('pointerup', () => { dragging = false; });
+
+    function tick() {
+      if (document.getElementById('autoSpin').checked && !dragging) angle += 0.035;
+      const vol = document.getElementById('activeMode').checked ? vols.active : vols.standby;
+      const sq = parseFloat(document.getElementById('squash').value);
+      renderFrame(vol, angle, sq, img.data);
+      ctx.putImageData(img, 0, 0);
+      requestAnimationFrame(tick);
+    }
+    tick();
+
+    function downloadCanvas(c, name) {
+      const a = document.createElement('a');
+      a.download = name;
+      a.href = c.toDataURL('image/png');
+      a.click();
+    }
+
+    document.getElementById('dlSheet').onclick = () => {
+      const c = document.createElement('canvas'); c.width = FRAME_W * 6; c.height = FRAME_H * 4;
+      const x = c.getContext('2d'), f = x.createImageData(FRAME_W, FRAME_H);
+      const vol = document.getElementById('activeMode').checked ? vols.active : vols.standby;
+      const sq = parseFloat(document.getElementById('squash').value);
+      for (let i = 0; i < 24; i++) {
+        renderFrame(vol, (i / 24) * Math.PI * 2, sq, f.data);
+        x.putImageData(f, (i % 6) * FRAME_W, Math.floor(i / 6) * FRAME_H);
+      }
+      downloadCanvas(c, 'azure-energy-tower-24dir.png');
+    };
+
+    document.getElementById('dlSlices').onclick = () => {
+      const c = document.createElement('canvas'); c.width = SLICE_SIZE * SLICE_COUNT; c.height = SLICE_SIZE;
+      const x = c.getContext('2d'), f = x.createImageData(c.width, c.height);
+      const vol = document.getElementById('activeMode').checked ? vols.active : vols.standby;
+      for (let z = 0; z < SLICE_COUNT; z++) for (let y = 0; y < SLICE_SIZE; y++) for (let px = 0; px < SLICE_SIZE; px++) {
+        const s = (z * SLICE_SIZE * SLICE_SIZE + y * SLICE_SIZE + px) * 4;
+        const d = (y * c.width + z * SLICE_SIZE + px) * 4;
+        f.data[d] = vol.rgba[s]; f.data[d+1] = vol.rgba[s+1]; f.data[d+2] = vol.rgba[s+2]; f.data[d+3] = vol.rgba[s+3];
+      }
+      x.putImageData(f, 0, 0);
+      downloadCanvas(c, 'azure-energy-tower-slices.png');
+    };
+
+    document.getElementById('dlFrame').onclick = () => {
+      const scale = 8, c = document.createElement('canvas');
+      c.width = FRAME_W * scale; c.height = FRAME_H * scale;
+      const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+      x.drawImage(cv, 0, 0, c.width, c.height);
+      downloadCanvas(c, 'azure-energy-tower-3d-preview.png');
+    };
+  </script>
+</body>
+</html>

@@ -15,6 +15,7 @@ import { STAGES, isStageId, type StageDef, type StageId, type EnemyKind } from '
 import { STAGE_HAZARDS, SPIKE_TINT, MOVER_TINT, SPIKE_DAMAGE, TRAP_DAMAGE } from '../systems/Hazards';
 import { finiteNumber, formatDamageText, isPositiveDamage } from '../systems/CombatMath';
 import { gameAudio } from '../systems/Audio';
+import { AzureTowerManager } from '../systems/AzureTowerStack';
 
 const PICKUP_TINT: Record<string, number> = {
   helmet: 0x66e0ff,
@@ -97,6 +98,7 @@ export class GameScene extends Phaser.Scene {
   private triggeredQuizzes = new Set<number>();
   private quizQueue: number[] = [];
   private quizBusy = false;
+  private towerManager!: AzureTowerManager;
 
   constructor() {
     super('GameScene');
@@ -166,6 +168,8 @@ export class GameScene extends Phaser.Scene {
     this.spawnMappedEnemies();
     this.spawnMappedPickups();
     this.spawnScienceStations();
+    this.towerManager = new AzureTowerManager();
+    this.towerManager.spawnForStage(this, this.stage, (obj) => this.applyLight(obj));
 
     this.boss = new StageBoss(
       this,
@@ -770,9 +774,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCheckpoints(): void {
-    for (const cp of this.stage.checkpoints) {
-      if (Math.abs(this.player.x - cp.x) < 24 && Math.abs(this.player.y - cp.y) < 28) {
-        this.checkpoint = { ...cp };
+    if (this.towerManager) {
+      const hit = this.towerManager.checkAndActivate(this, this.player.x, this.player.y);
+      if (hit) {
+        this.checkpoint = { x: hit.x, y: hit.y };
+        if (hit.newlyActivated) {
+          gameAudio.play('pickup');
+          this.spawnSpark(hit.renderX, hit.y - 16, 0x66ffff, 4);
+          this.showFloatingText(hit.renderX, hit.y - 34, '蒼藍能量塔　記錄點啟動！', '#7ef0ff');
+        }
+      }
+    } else {
+      for (const cp of this.stage.checkpoints) {
+        if (Math.abs(this.player.x - cp.x) < 24 && Math.abs(this.player.y - cp.y) < 28) {
+          this.checkpoint = { ...cp };
+        }
       }
     }
     if (this.fightLocked) {
